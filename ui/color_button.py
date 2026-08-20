@@ -2,17 +2,9 @@
 """Color button widget with live preview chip and QColorDialog integration."""
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import QColorDialog, QPushButton, QWidget
-
-try:
-    from qgis.gui import QgsColorButton
-    HAS_QGS_COLOR_BUTTON = True
-except ImportError:
-    HAS_QGS_COLOR_BUTTON = False
-    QgsColorButton = QPushButton
-
 
 class ColorPickerButton(QPushButton):
     """Reliable color picker button with color chip, hex display, and colorChanged signal."""
@@ -29,10 +21,10 @@ class ColorPickerButton(QPushButton):
         return self._color
 
     def setColor(self, color: QColor | str) -> None:
-        if isinstance(color, str):
-            self._color = QColor(color)
-        else:
-            self._color = QColor(color)
+        candidate = QColor(color)
+        if not candidate.isValid():
+            return
+        self._color = candidate
         self._update_display()
         self.colorChanged.emit(self._color)
 
@@ -42,6 +34,7 @@ class ColorPickerButton(QPushButton):
         lum = 0.299 * self._color.red() + 0.587 * self._color.green() + 0.114 * self._color.blue()
         text_color = "#000000" if lum > 140 else "#ffffff"
         self.setText(hex_code.upper())
+        self.setAccessibleName(f"Color {hex_code.upper()}")
         self.setStyleSheet(
             f"QPushButton {{ background-color: {hex_code}; color: {text_color}; "
             f"font-weight: bold; border: 1px solid #94a3b8; border-radius: 4px; padding: 4px 8px; }}"
@@ -49,6 +42,6 @@ class ColorPickerButton(QPushButton):
         )
 
     def _choose_color(self) -> None:
-        chosen = QColorDialog.getColor(self._color, self, "Select Color", QColorDialog.ShowAlphaChannel)
+        chosen = QColorDialog.getColor(self._color, self, "Select Color")
         if chosen.isValid():
             self.setColor(chosen)

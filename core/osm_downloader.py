@@ -49,7 +49,7 @@ OVERPASS_ENDPOINTS = (
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
 )
-USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.0.0 (https://github.com/YusufEminoglu/qgis_25d_styling)"
+USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.0.1 (https://github.com/YusufEminoglu/qgis_25d_styling)"
 DEFAULT_TIMEOUT_S = 60
 CACHE_TTL_S = 7 * 24 * 3600  # 1 week cache
 
@@ -199,7 +199,7 @@ def osm_json_to_vector_layer(
     osm_data: dict,
     target_crs: Optional[QgsCoordinateReferenceSystem] = None,
     layer_name: str = "OSM_25D_Buildings",
-    default_height: float = 9.0,
+    default_levels: int = 3,
     floor_height_m: float = 3.0,
 ) -> QgsVectorLayer:
     """Convert OSM Overpass elements into a clean QgsVectorLayer with calculated 2.5D attributes."""
@@ -229,6 +229,7 @@ def osm_json_to_vector_layer(
     fields.append(QgsField("name", QVariant.String))
     fields.append(QgsField("building", QVariant.String))
     fields.append(QgsField("building_levels", QVariant.Double))
+    fields.append(QgsField("levels_source", QVariant.String))
     fields.append(QgsField("height", QVariant.Double))
     fields.append(QgsField("min_height", QVariant.Double))
     fields.append(QgsField("roof_shape", QVariant.String))
@@ -284,27 +285,16 @@ def osm_json_to_vector_layer(
         num_levels = parse_numeric_levels(raw_levels)
         num_height = parse_numeric_height(raw_h)
         num_min_h = parse_numeric_height(raw_min_h) or 0.0
-
-        if num_height is None:
-            if num_levels is not None and num_levels > 0:
-                num_height = num_levels * floor_height_m
-            else:
-                # Estimate based on building tag
-                if b_type in ("house", "detached", "residential", "bungalow"):
-                    num_height = 6.0
-                    num_levels = 2.0
-                elif b_type in ("garage", "shed", "cabin", "kiosk"):
-                    num_height = 3.0
-                    num_levels = 1.0
-                elif b_type in ("commercial", "office", "apartments"):
-                    num_height = 15.0
-                    num_levels = 5.0
-                else:
-                    num_height = default_height
-                    num_levels = max(1.0, round(default_height / floor_height_m))
+        if num_levels is not None and num_levels > 0:
+            levels_source = "osm"
+        elif num_height is not None and num_height > 0:
+            num_levels = float(max(1, min(100, round(num_height / max(0.5, float(floor_height_m))))))
+            levels_source = "estimated"
         else:
-            if num_levels is None and num_height > 0:
-                num_levels = max(1.0, round(num_height / floor_height_m))
+            num_levels = float(max(1, min(100, int(default_levels))))
+            levels_source = "default"
+        if num_height is None or num_height <= 0:
+            num_height = num_levels * max(0.5, float(floor_height_m))
 
         feat = QgsFeature(layer.fields())
         feat.setGeometry(qgs_geom)
@@ -312,6 +302,7 @@ def osm_json_to_vector_layer(
         feat.setAttribute("name", name)
         feat.setAttribute("building", b_type)
         feat.setAttribute("building_levels", float(num_levels) if num_levels else 1.0)
+        feat.setAttribute("levels_source", levels_source)
         feat.setAttribute("height", float(num_height))
         feat.setAttribute("min_height", float(num_min_h))
         feat.setAttribute("roof_shape", roof_shape)

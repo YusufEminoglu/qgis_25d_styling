@@ -7,6 +7,4 @@ __pycache__/
 .vscode/
 *.log
 scratch/
-tests/
-e2e/
 .zipignore

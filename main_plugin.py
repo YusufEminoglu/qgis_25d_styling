@@ -38,27 +38,28 @@ class Qgis25DStylingPlugin:
         icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
 
         self.action = QAction(icon, "QGIS 2.5D Styling", self.iface.mainWindow())
-        self.action.setToolTip("Open QGIS 2.5D Styling Studio (Right Dock Panel)")
+        self.action.setToolTip("Open the QGIS 2.5D Styling panel")
+        self.action.setCheckable(True)
         self.action.triggered.connect(self.toggle_dock)
 
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToVectorMenu("QGIS 2.5D Styling", self.action)
 
-        _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
-
-        # Create Right-Docked Panel
-        self.dock = StylingDockWidget(self.iface, self.iface.mainWindow())
-        self.iface.addDockWidget(_RightDock, self.dock)
-        self.dock.hide()
-
-    def toggle_dock(self) -> None:
+    def toggle_dock(self, visible=None) -> None:
         _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
         if not self.dock:
             self.dock = StylingDockWidget(self.iface, self.iface.mainWindow())
             self.iface.addDockWidget(_RightDock, self.dock)
-        if self.dock.isVisible():
-            self.dock.hide()
-        else:
+            if self.action:
+                self.dock.visibilityChanged.connect(self.action.setChecked)
+            main_window = self.iface.mainWindow()
+            horizontal = getattr(getattr(Qt, "Orientation", Qt), "Horizontal", getattr(Qt, "Horizontal", 1))
+            vertical = getattr(getattr(Qt, "Orientation", Qt), "Vertical", getattr(Qt, "Vertical", 2))
+            main_window.resizeDocks([self.dock], [420], horizontal)
+            main_window.resizeDocks([self.dock], [720], vertical)
+        should_show = (not self.dock.isVisible()) if visible is None else bool(visible)
+        self.dock.setVisible(should_show)
+        if should_show:
             self.dock.show()
             self.dock.raise_()
             self.dock.activateWindow()
@@ -73,9 +74,13 @@ class Qgis25DStylingPlugin:
             if self.action:
                 self.iface.removePluginVectorMenu("QGIS 2.5D Styling", self.action)
                 self.iface.removeToolBarIcon(self.action)
+                self.action.setParent(None)
+                self.action.deleteLater()
                 self.action = None
 
             if self.dock:
+                self.dock.cancel_download()
                 self.iface.removeDockWidget(self.dock)
+                self.dock.setParent(None)
                 self.dock.deleteLater()
                 self.dock = None

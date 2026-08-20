@@ -12,6 +12,7 @@ try:
         Qgs25DRenderer,
         QgsColorRamp,
         QgsExpression,
+        QgsExpressionContextUtils,
         QgsFeatureRenderer,
         QgsFillSymbol,
         QgsGeometryGeneratorSymbolLayer,
@@ -34,6 +35,7 @@ except ImportError:
     Qgs25DRenderer = None
     QgsColorRamp = None
     QgsExpression = None
+    QgsExpressionContextUtils = None
     QgsFeatureRenderer = None
     QgsFillSymbol = None
     QgsGeometryGeneratorSymbolLayer = None
@@ -52,6 +54,7 @@ except ImportError:
     QColor = None
 
 from .presets import FLOOR_BAND_PALETTES, PRESETS
+from .config import normalize_config
 
 
 _BrushSolid = getattr(getattr(Qt, "BrushStyle", Qt), "SolidPattern", getattr(Qt, "SolidPattern", 1)) if Qt else 1
@@ -79,13 +82,15 @@ def build_height_expression(
     default_height: float = 9.0,
 ) -> str:
     """Build a robust SQL/QGIS expression that calculates building height in meters."""
-    field_clean = field_or_expr.strip()
+    field_clean = str(field_or_expr or "").strip()
     mult_str = f" * {multiplier:.4f}" if abs(multiplier - 1.0) > 1e-4 else ""
 
-    if field_clean in ("height", "building_levels", "min_height"):
+    if field_clean == "height":
         return (
             f'(coalesce(try("height"), try("building_levels") * 3.0, {default_height:.1f}){mult_str})'
         )
+    if any(token in field_clean.lower() for token in ("level", "floor", "storey", "story", "kat")):
+        return f'(coalesce(try("{field_clean}") * 3.0, {default_height:.1f}){mult_str})'
     if field_clean:
         return f'(coalesce(try("{field_clean}"), {default_height:.1f}){mult_str})'
     return f"({default_height:.1f}{mult_str})"
@@ -106,9 +111,8 @@ def apply_native_25d_renderer(
     )
 
     angle_deg = float(config.get("projection_angle", 45.0))
-    sun_angle = float(config.get("sun_azimuth", 315.0))
-    wall_col = hex_to_qcolor(config.get("wall_color", "#e2e8f0"))
-    roof_col = hex_to_qcolor(config.get("roof_color", "#ffffff"))
+    wall_col = hex_to_qcolor(config.get("wall_color", "#7fb8b0"))
+    roof_col = hex_to_qcolor(config.get("roof_color", "#f7c3a1"))
 
     shadow_enabled = bool(config.get("shadow_enabled", True))
     shadow_alpha = int(config.get("shadow_alpha", 40) * 2.55)
@@ -117,11 +121,10 @@ def apply_native_25d_renderer(
 
     shading_enabled = bool(config.get("facade_shading", True))
 
-    # Qgs25DRenderer uses layer custom properties for expression bindings
-    layer.setCustomProperty("qgis_25d_height", h_expr)
-    layer.setCustomProperty("qgis_25d_angle", str(angle_deg))
-    layer.setCustomProperty("qgis_25d_sun_angle", str(sun_angle))
-    layer.setCustomProperty("qgis_25d_shadow_enabled", "true" if shadow_enabled else "false")
+    # Qgs25DRenderer evaluates only these two layer-scoped expression variables;
+    # sun azimuth and shading depth have no native-renderer equivalent.
+    QgsExpressionContextUtils.setLayerVariable(layer, "qgis_25d_height", h_expr)
+    QgsExpressionContextUtils.setLayerVariable(layer, "qgis_25d_angle", angle_deg)
 
     renderer = Qgs25DRenderer()
     renderer.setRoofColor(roof_col)
@@ -157,9 +160,9 @@ def apply_geometry_generator_25d_style(
     dx = math.cos(angle_rad)
     dy = math.sin(angle_rad)
 
-    wall_col = hex_to_qcolor(config.get("wall_color", "#e2e8f0"))
-    roof_col = hex_to_qcolor(config.get("roof_color", "#ffffff"))
-    outline_col = hex_to_qcolor(config.get("outline_color", "#475569"))
+    wall_col = hex_to_qcolor(config.get("wall_color", "#7fb8b0"))
+    roof_col = hex_to_qcolor(config.get("roof_color", "#f7c3a1"))
+    outline_col = hex_to_qcolor(config.get("outline_color", "#3f6d66"))
     outline_width = float(config.get("outline_width", 0.3))
 
     shadow_enabled = bool(config.get("shadow_enabled", True))
@@ -311,6 +314,15 @@ def apply_geometry_generator_25d_style(
     fill_symbol.appendSymbolLayer(roof_gen)
 
     renderer = QgsSingleSymbolRenderer(fill_symbol)
+    order_by_expr = (
+        f"distance($geometry, translate(@map_extent_center, "
+        f"1000 * @map_extent_width * cos(radians({angle_deg:.1f} + 180)), "
+        f"1000 * @map_extent_width * sin(radians({angle_deg:.1f} + 180))))"
+    )
+    renderer.setOrderBy(QgsFeatureRequest.OrderBy([
+        QgsFeatureRequest.OrderByClause(order_by_expr, False, True)
+    ]))
+    renderer.setOrderByEnabled(True)
     layer.setRenderer(renderer)
     layer.emitStyleChanged()
     layer.triggerRepaint()
@@ -374,6 +386,7 @@ def apply_per_floor_bands_style(
     h_field = config.get("height_field", "height")
     h_scale = float(config.get("height_multiplier", 1.0))
     floor_h = float(config.get("floor_height_m", 3.0))
+    default_levels = int(config.get("default_levels", 3))
     palette_key = config.get("floor_palette", "civic_spectrum")
 
     is_floor_field = any(tok in h_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
@@ -405,9 +418,9 @@ def apply_per_floor_bands_style(
     eff_floor_h = floor_h * scale_factor * h_scale
 
     if is_floor_field:
-        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\"))), 3)"
+        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\"))), {default_levels})"
     else:
-        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\") / {floor_h:.4f})), 3)"
+        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\") / {floor_h:.4f})), {default_levels})"
 
     sym_fill_type = getattr(getattr(Qgis, "SymbolType", Qgis), "Fill", 2)
     map_unit = getattr(QgsUnitTypes, "RenderMapUnits", getattr(QgsUnitTypes, "RenderMillimeters", 1))
@@ -544,6 +557,8 @@ def apply_25d_style(
     """Master styling dispatcher: applies either per-floor bands, geometry generator, or native 2.5D renderer."""
     if not layer or not layer.isValid():
         return False
+
+    config = normalize_config(config)
 
     render_mode = config.get("render_mode", "")
     if render_mode == "per_floor_bands" or config.get("per_floor_bands", False):

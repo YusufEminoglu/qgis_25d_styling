@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from qgis.core import (
-    QgsColorRamp,
     QgsFeatureSink,
     QgsProcessing,
     QgsProcessingAlgorithm,
@@ -18,7 +17,6 @@ from qgis.core import (
     QgsProcessingParameterFileDestination,
     QgsProcessingParameterNumber,
     QgsProcessingParameterVectorDestination,
-    QgsProcessingParameterVectorLayer,
     QgsVectorLayer,
 )
 
@@ -34,6 +32,8 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
     PRESET = "PRESET"
     HEIGHT_FIELD = "HEIGHT_FIELD"
     HEIGHT_SCALE = "HEIGHT_SCALE"
+    DEFAULT_HEIGHT = "DEFAULT_HEIGHT"
+    RENDER_MODE = "RENDER_MODE"
     PROJECTION_ANGLE = "PROJECTION_ANGLE"
     SUN_AZIMUTH = "SUN_AZIMUTH"
     SHADING_INTENSITY = "SHADING_INTENSITY"
@@ -47,6 +47,8 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
 
     PRESET_KEYS = ["custom"] + list(PRESETS.keys())
     PRESET_NAMES = ["Custom Parameters"] + [p["name"] for p in PRESETS.values()]
+    RENDER_MODE_KEYS = ["geometry_generator", "per_floor_bands", "native"]
+    RENDER_MODE_NAMES = ["Geometry generator", "Per-floor color bands", "Native QGIS 2.5D"]
 
     def createInstance(self):
         return Apply25DStyleAlgorithm()
@@ -67,9 +69,8 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
         return (
             "Applies publication-grade 2.5D building extrusion, solar aspect lighting, "
             "and architectural floor bands to any polygon vector layer.\n\n"
-            "Supports 8 curated architectural presets (Swiss Minimalist, Dark Obsidian, "
-            "Warm Terracotta, Vintage Blueprint, Emerald Glass, Cyberpunk Neon, Solar Heatmap, "
-            "and Monochrome Print)."
+            "Choose Custom Parameters to use the individual controls, or select a preset as a "
+            "complete material and lighting template. The input features are copied to a styled output layer."
         )
 
     def initAlgorithm(self, config=None):
@@ -83,7 +84,15 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 self.PRESET,
                 "Architectural Preset",
                 options=self.PRESET_NAMES,
-                defaultValue=1,  # Swiss Minimalist
+                defaultValue=0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.RENDER_MODE,
+                "2.5D Renderer",
+                options=self.RENDER_MODE_NAMES,
+                defaultValue=0,
             )
         )
         self.addParameter(
@@ -103,6 +112,16 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 defaultValue=1.0,
                 minValue=0.1,
                 maxValue=10.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.DEFAULT_HEIGHT,
+                "Fallback Height (meters)",
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=9.0,
+                minValue=0.5,
+                maxValue=1000.0,
             )
         )
         self.addParameter(
@@ -137,17 +156,17 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
         )
         self.addParameter(
             QgsProcessingParameterColor(
-                self.WALL_COLOR, "Wall / Facade Color", defaultValue="#e2e8f0"
+                self.WALL_COLOR, "Wall / Facade Color", defaultValue="#7fb8b0"
             )
         )
         self.addParameter(
             QgsProcessingParameterColor(
-                self.ROOF_COLOR, "Roof Cap Color", defaultValue="#ffffff"
+                self.ROOF_COLOR, "Roof Cap Color", defaultValue="#f7c3a1"
             )
         )
         self.addParameter(
             QgsProcessingParameterColor(
-                self.OUTLINE_COLOR, "Outline Color", defaultValue="#475569"
+                self.OUTLINE_COLOR, "Outline Color", defaultValue="#3f6d66"
             )
         )
         self.addParameter(
@@ -192,10 +211,15 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             source.wkbType(),
             source.sourceCrs(),
         )
+        if sink is None:
+            raise QgsProcessingException("Could not create the styled output layer.")
 
         preset_idx = self.parameterAsEnum(parameters, self.PRESET, context)
         h_field = self.parameterAsString(parameters, self.HEIGHT_FIELD, context) or "height"
         h_scale = self.parameterAsDouble(parameters, self.HEIGHT_SCALE, context)
+        default_height = self.parameterAsDouble(parameters, self.DEFAULT_HEIGHT, context)
+        mode_idx = self.parameterAsEnum(parameters, self.RENDER_MODE, context)
+        render_mode = self.RENDER_MODE_KEYS[mode_idx] if 0 <= mode_idx < len(self.RENDER_MODE_KEYS) else "geometry_generator"
 
         # Copy features to output sink
         total = 100.0 / source.featureCount() if source.featureCount() else 0
@@ -213,12 +237,14 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 cfg = dict(PRESETS[pkey])
                 cfg["height_field"] = h_field
                 cfg["height_multiplier"] = h_scale
-                cfg["use_geometry_generator"] = True
+                cfg["default_height"] = default_height
+                cfg["render_mode"] = render_mode
             else:
                 cfg = {
                     "height_field": h_field,
                     "height_multiplier": h_scale,
-                    "use_geometry_generator": True,
+                    "default_height": default_height,
+                    "render_mode": render_mode,
                     "projection_angle": self.parameterAsDouble(parameters, self.PROJECTION_ANGLE, context),
                     "sun_azimuth": self.parameterAsDouble(parameters, self.SUN_AZIMUTH, context),
                     "shading_intensity": self.parameterAsDouble(parameters, self.SHADING_INTENSITY, context),
@@ -238,11 +264,18 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                     "floor_line_width": 0.2,
                 }
 
-            apply_25d_style(out_layer, cfg)
+            if not apply_25d_style(out_layer, cfg):
+                raise QgsProcessingException("The 2.5D renderer could not style the output layer.")
 
             qml_path = self.parameterAsString(parameters, self.OUTPUT_QML, context)
             if qml_path:
                 export_layer_qml(out_layer, qml_path)
                 feedback.pushInfo(f"Exported QML style to: {qml_path}")
+        else:
+            feedback.reportError(
+                "Could not resolve the output layer for styling; the destination "
+                "was written but no symbology or QML was applied.",
+                fatalError=False,
+            )
 
         return {self.OUTPUT: dest_id}

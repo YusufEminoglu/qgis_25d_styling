@@ -1,31 +1,27 @@
 # -*- coding: utf-8 -*-
-"""Main right-docked panel for QGIS 2.5D Styling."""
+"""Focused, dockable workflow for applying 2.5D polygon symbology."""
 from __future__ import annotations
 
-import contextlib
-import math
+import json
 import os
-import tempfile
 from typing import Any, Dict, Optional
 
 from qgis.core import (
+    QgsApplication,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsFieldProxyModel,
     QgsMapLayer,
     QgsMapLayerProxyModel,
     QgsProject,
-    QgsRectangle,
-    QgsSingleSymbolRenderer,
-    QgsFillSymbol,
+    QgsTask,
     QgsVectorLayer,
     QgsWkbTypes,
 )
 from qgis.gui import QgsDoubleSpinBox, QgsFieldComboBox, QgsMapLayerComboBox
-from qgis.PyQt.QtCore import Qt, QTimer
-from qgis.PyQt.QtGui import QColor, QIcon
+from qgis.PyQt.QtCore import QSettings, Qt, QTimer
+from qgis.PyQt.QtGui import QColor, QPixmap
 from qgis.PyQt.QtWidgets import (
-    QAction,
-    QApplication,
     QCheckBox,
     QComboBox,
     QDockWidget,
@@ -36,653 +32,597 @@ from qgis.PyQt.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QScrollArea,
     QSlider,
     QSpinBox,
-    QSplitter,
+    QStyle,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from ..core.osm_downloader import (
-    OsmDownloadError,
-    build_overpass_building_query,
-    fetch_overpass_json,
-    osm_json_to_vector_layer,
-)
+from ..core.config import choose_height_field, compass_direction, normalize_config
+from ..core.osm_downloader import build_overpass_building_query, fetch_overpass_json, osm_json_to_vector_layer
 from ..core.presets import FLOOR_BAND_PALETTES, PRESETS, STANDARD_ANGLES
 from ..core.qml_exporter import export_layer_qml, load_layer_qml
 from ..core.twopointfive_engine import apply_25d_style
 from .color_button import ColorPickerButton
-from .segmented_tabs import StylingSubTabs
 
 
-def _get_icon(name: str = "icon.png") -> QIcon:
-    base = os.path.dirname(os.path.dirname(__file__))
-    path = os.path.join(base, "icons", name)
-    if os.path.exists(path):
-        return QIcon(path)
-    return QIcon()
+def _horizontal() -> Any:
+    return getattr(getattr(Qt, "Orientation", Qt), "Horizontal", getattr(Qt, "Horizontal", 1))
+
+
+def _no_frame() -> Any:
+    return getattr(getattr(QFrame, "Shape", QFrame), "NoFrame", getattr(QFrame, "NoFrame", 0))
+
+
+def _form_growth_policy() -> Any:
+    return getattr(
+        getattr(QFormLayout, "FieldGrowthPolicy", QFormLayout),
+        "AllNonFixedFieldsGrow",
+        getattr(QFormLayout, "AllNonFixedFieldsGrow", 1),
+    )
+
+
+def _standard_icon(widget: QWidget, name: str):
+    enum = getattr(getattr(QStyle, "StandardPixmap", QStyle), name, getattr(QStyle, name, None))
+    return widget.style().standardIcon(enum) if enum is not None else widget.windowIcon()
 
 
 class StylingDockWidget(QDockWidget):
-    """QGIS 2.5D Styling Dock Widget (Docked on the Right Side)."""
+    """Right/left dock dedicated to polygon-to-2.5D styling."""
+
+    SETTINGS_GROUP = "qgis_25d_styling/dock"
 
     def __init__(self, iface, parent: Optional[QWidget] = None):
         super().__init__("QGIS 2.5D Styling", parent or (iface.mainWindow() if iface else None))
         self.iface = iface
-        _LeftDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "LeftDockWidgetArea", getattr(Qt, "LeftDockWidgetArea", 1))
-        _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
-        self.setAllowedAreas(_LeftDock | _RightDock)
+        right = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
+        self.setAllowedAreas(right)
+        self.setMinimumWidth(340)
+        self.setMaximumWidth(480)
+        self.setMaximumHeight(790)
+        self.setObjectName("Qgis25DStylingDock")
 
         self._updating_controls = False
+        self._original_renderers: Dict[str, Any] = {}
+        self._osm_task = None
+        self._osm_cancel_requested = False
+        self._osm_floor_height = 3.2
+        self._osm_default_levels = 3
+        self._settings = QSettings("PlanX", "QGIS25DStyling")
+        self._apply_timer = QTimer(self)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.timeout.connect(lambda: self.apply_current_style(automatic=True))
 
         self._build_ui()
-        self._apply_style()
         self._connect_signals()
+        self._restore_settings()
 
-    def _apply_style(self) -> None:
-        self.setStyleSheet("""
-            QDockWidget {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            }
-            QFrame#heroCard {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                margin-bottom: 6px;
-            }
-            QLabel#heroTitle {
-                font-size: 15px;
-                font-weight: 700;
-                color: #0f172a;
-            }
-            QLabel#heroSub {
-                font-size: 11px;
-                color: #64748b;
-            }
-            QFrame#subTabHeader {
-                background: transparent;
-                border-bottom: 1px solid #cbd5e1;
-            }
-            QPushButton#subTabBtn {
-                background: #f1f5f9;
-                color: #475569;
-                border: 1px solid #cbd5e1;
-                border-bottom: none;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-weight: 600;
-                margin-bottom: -1px;
-                margin-right: 3px;
-            }
-            QPushButton#subTabBtn:hover:!checked {
-                background: #e2e8f0;
-                color: #0f172a;
-            }
-            QPushButton#subTabBtn:checked {
-                background: #ffffff;
-                color: #1d4ed8;
-                font-weight: 700;
-                border: 1px solid #94a3b8;
-                border-bottom: 2px solid #2563eb;
-            }
-            QStackedWidget#subTabStack {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-top: none;
-                border-bottom-left-radius: 8px;
-                border-bottom-right-radius: 8px;
-            }
-            QGroupBox {
-                font-weight: 700;
-                font-size: 11px;
-                color: #1e293b;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px;
-            }
-            QPushButton.primaryBtn {
-                background: #2563eb;
-                color: #ffffff;
-                font-weight: 700;
-                padding: 8px 14px;
-                border-radius: 6px;
-                border: none;
-            }
-            QPushButton.primaryBtn:hover {
-                background: #1d4ed8;
-            }
-            QPushButton.presetCardBtn {
-                background: #f8fafc;
-                border: 1px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 6px 10px;
-                text-align: left;
-                font-weight: 600;
-                font-size: 11px;
-            }
-            QPushButton.presetCardBtn:hover {
-                background: #eff6ff;
-                border-color: #3b82f6;
-                color: #1d4ed8;
-            }
-        """)
+        active = self.iface.activeLayer() if self.iface and hasattr(self.iface, "activeLayer") else None
+        if isinstance(active, QgsVectorLayer):
+            self.cb_layer.setLayer(active)
+        self._on_layer_changed(self.cb_layer.currentLayer())
+
+    def _scroll_page(self) -> tuple[QScrollArea, QVBoxLayout]:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(_no_frame())
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(6, 8, 6, 8)
+        layout.setSpacing(8)
+        scroll.setWidget(body)
+        return scroll, layout
 
     def _build_ui(self) -> None:
         container = QWidget()
         root = QVBoxLayout(container)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root.setSpacing(7)
 
-        # ── Hero Header ──
         hero = QFrame()
-        hero.setObjectName("heroCard")
-        hl = QVBoxLayout(hero)
-        hl.setContentsMargins(10, 8, 10, 8)
-        hl.setSpacing(2)
-
-        title_lbl = QLabel("QGIS 2.5D Styling Studio")
-        title_lbl.setObjectName("heroTitle")
-        sub_lbl = QLabel("Architectural 2.5D Extrusions, Solar Shading & OSM Downloader")
-        sub_lbl.setObjectName("heroSub")
-        hl.addWidget(title_lbl)
-        hl.addWidget(sub_lbl)
+        hero.setObjectName("heroPanel")
+        hero.setStyleSheet("QFrame#heroPanel { background: palette(alternate-base); border: 1px solid palette(mid); border-radius: 6px; }")
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(10, 7, 10, 7)
+        hero_layout.setSpacing(9)
+        icon_label = QLabel()
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "icon.png")
+        pixmap = QPixmap(icon_path)
+        icon_label.setPixmap(pixmap.scaled(56, 56, getattr(getattr(Qt, "AspectRatioMode", Qt), "KeepAspectRatio", getattr(Qt, "KeepAspectRatio", 1)), getattr(getattr(Qt, "TransformationMode", Qt), "SmoothTransformation", getattr(Qt, "SmoothTransformation", 1))))
+        icon_label.setFixedSize(58, 58)
+        hero_layout.addWidget(icon_label)
+        hero_copy = QVBoxLayout()
+        hero_copy.setSpacing(0)
+        eyebrow = QLabel("2.5D BUILDING STYLER")
+        eyebrow.setStyleSheet("font-size: 9px; font-weight: 700; color: palette(text); letter-spacing: 0px;")
+        title = QLabel("QGIS 2.5D")
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        subtitle = QLabel("OSM buildings and floor-by-floor colour")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("font-size: 10px; color: palette(text);")
+        hero_copy.addWidget(eyebrow)
+        hero_copy.addWidget(title)
+        hero_copy.addWidget(subtitle)
+        hero_layout.addLayout(hero_copy, 1)
+        badge = QLabel("OSM\n2.5D")
+        badge.setAlignment(getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignCenter", getattr(Qt, "AlignCenter", 132)))
+        badge.setStyleSheet("font-size: 9px; font-weight: 700; border: 1px solid palette(highlight); border-radius: 4px; padding: 3px;")
+        hero_layout.addWidget(badge)
         root.addWidget(hero)
 
-        # ── Layer Selector Card ──
-        layer_card = QFrame()
-        layer_card.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px;")
-        layer_lyt = QFormLayout(layer_card)
-        layer_lyt.setContentsMargins(6, 6, 6, 6)
+        heading = QHBoxLayout()
+        self.lbl_state = QLabel("Select a polygon layer")
+        self.lbl_state.setAlignment(getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignRight", getattr(Qt, "AlignRight", 2)))
+        self.lbl_state.setWordWrap(True)
+        heading.addWidget(QLabel("Target"))
+        heading.addWidget(self.lbl_state, 1)
+        root.addLayout(heading)
 
+        source = QGroupBox("Source")
+        source_form = QFormLayout(source)
+        source_form.setFieldGrowthPolicy(_form_growth_policy())
         self.cb_layer = QgsMapLayerComboBox()
         self.cb_layer.setFilters(QgsMapLayerProxyModel.PolygonLayer)
-        layer_lyt.addRow("Target Layer:", self.cb_layer)
+        self.cb_layer.setAccessibleName("Target polygon layer")
+        source_form.addRow("Layer", self.cb_layer)
 
-        root.addWidget(layer_card)
+        self.cb_height_field = QgsFieldComboBox()
+        self.cb_height_field.setFilters(QgsFieldProxyModel.Numeric)
+        self.cb_height_field.setAllowEmptyFieldName(True)
+        self.cb_height_field.setAccessibleName("Building height field")
+        source_form.addRow("Height / floors", self.cb_height_field)
 
-        # ── Main Segmented Tabs ──
-        self.tabs = StylingSubTabs()
+        self.sp_default_levels = QSpinBox()
+        self.sp_default_levels.setRange(1, 100)
+        self.sp_default_levels.setValue(3)
+        self.sp_default_levels.setSuffix(" floors")
+        self.sp_default_levels.setToolTip("Used when building:levels or the selected floor field is missing")
+        source_form.addRow("Missing levels", self.sp_default_levels)
 
-        # Tab 1: OSM Downloader
-        self.tabs.addTab(self._build_osm_tab(), "🌍 OSM Fetch")
+        height_row = QHBoxLayout()
+        self.sp_default_height = QgsDoubleSpinBox()
+        self.sp_default_height.setRange(0.5, 1000.0)
+        self.sp_default_height.setValue(9.0)
+        self.sp_default_height.setSuffix(" m")
+        self.sp_default_height.setDecimals(1)
+        self.sp_multiplier = QgsDoubleSpinBox()
+        self.sp_multiplier.setRange(0.05, 20.0)
+        self.sp_multiplier.setValue(1.0)
+        self.sp_multiplier.setSingleStep(0.1)
+        self.sp_multiplier.setPrefix("x ")
+        height_row.addWidget(self.sp_default_height)
+        height_row.addWidget(self.sp_multiplier)
+        source_form.addRow("Fallback / scale", height_row)
+        root.addWidget(source)
 
-        # Tab 2: 2.5D Extrusion & Angle
-        self.tabs.addTab(self._build_extrusion_tab(), "🏢 Extrusion")
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setAccessibleName("2.5D style settings")
+        self.tabs.addTab(self._build_osm_tab(), "OSM")
+        self.tabs.addTab(self._build_projection_tab(), "Form")
+        self.tabs.addTab(self._build_lighting_tab(), "Light")
+        self.tabs.addTab(self._build_surface_tab(), "Floors")
+        self.tabs.addTab(self._build_presets_tab(), "Themes")
+        root.addWidget(self.tabs)
+        root.addStretch(1)
 
-        # Tab 3: Lighting & Shadows
-        self.tabs.addTab(self._build_lighting_tab(), "☀️ Lighting")
+        self.lbl_diagnostics = QLabel()
+        self.lbl_diagnostics.setWordWrap(True)
+        self.lbl_diagnostics.setStyleSheet("padding: 4px;")
+        root.addWidget(self.lbl_diagnostics)
 
-        # Tab 4: Facade & Floor Bands
-        self.tabs.addTab(self._build_facade_tab(), "🎨 Facade")
-
-        # Tab 5: Presets & QML
-        self.tabs.addTab(self._build_presets_tab(), "✨ Presets")
-
-        root.addWidget(self.tabs, 1)
-
-        # ── Bottom Action Toolbar ──
-        action_card = QFrame()
-        action_lyt = QVBoxLayout(action_card)
-        action_lyt.setContentsMargins(0, 4, 0, 0)
-        action_lyt.setSpacing(6)
-
-        self.chk_auto_apply = QCheckBox("⚡ Live Auto-Apply on Change")
+        live_row = QHBoxLayout()
+        self.chk_auto_apply = QCheckBox("Live preview")
         self.chk_auto_apply.setChecked(True)
-        self.chk_auto_apply.setStyleSheet("font-weight: 600; color: #0f172a;")
-        action_lyt.addWidget(self.chk_auto_apply)
+        self.chk_auto_apply.setToolTip("Apply changes after a short pause")
+        live_row.addWidget(self.chk_auto_apply)
+        live_row.addStretch()
+        self.lbl_apply_status = QLabel("Ready")
+        live_row.addWidget(self.lbl_apply_status)
+        root.addLayout(live_row)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
-
-        self.btn_apply = QPushButton("🚀 Apply 2.5D Style")
-        self.btn_apply.setProperty("class", "primaryBtn")
-        self.btn_apply.setStyleSheet("background: #2563eb; color: white; font-weight: 700; padding: 7px; border-radius: 5px;")
-        self.btn_apply.clicked.connect(self.apply_current_style)
-
-        self.btn_reset = QPushButton("↺ Reset 2D")
-        self.btn_reset.setToolTip("Reset to standard flat 2D single symbol")
-        self.btn_reset.clicked.connect(self.reset_to_2d)
-
-        self.btn_export_qml = QPushButton("💾 Export QML")
-        self.btn_export_qml.clicked.connect(self.export_qml)
-
-        btn_row.addWidget(self.btn_apply, 2)
-        btn_row.addWidget(self.btn_reset, 1)
-        btn_row.addWidget(self.btn_export_qml, 1)
-
-        action_lyt.addLayout(btn_row)
-        root.addWidget(action_card)
+        command_row = QHBoxLayout()
+        self.btn_apply = QPushButton("Apply")
+        self.btn_apply.setIcon(_standard_icon(self, "SP_DialogApplyButton"))
+        self.btn_apply.setToolTip("Apply the current 2.5D style")
+        self.btn_apply.setAccessibleName("Apply 2.5D style")
+        self.btn_restore = QPushButton("Restore")
+        self.btn_restore.setIcon(_standard_icon(self, "SP_DialogResetButton"))
+        self.btn_restore.setToolTip("Restore the style that existed before the first apply")
+        self.btn_import_qml = QPushButton()
+        self.btn_import_qml.setIcon(_standard_icon(self, "SP_DialogOpenButton"))
+        self.btn_import_qml.setToolTip("Import a QGIS layer style")
+        self.btn_import_qml.setAccessibleName("Import QML style")
+        self.btn_export_qml = QPushButton()
+        self.btn_export_qml.setIcon(_standard_icon(self, "SP_DialogSaveButton"))
+        self.btn_export_qml.setToolTip("Export the current QGIS layer style")
+        self.btn_export_qml.setAccessibleName("Export QML style")
+        command_row.addWidget(self.btn_apply, 2)
+        command_row.addWidget(self.btn_restore)
+        command_row.addStretch()
+        command_row.addWidget(self.btn_import_qml)
+        command_row.addWidget(self.btn_export_qml)
+        root.addLayout(command_row)
 
         self.setWidget(container)
 
-    # -----------------------------------------------------------------
-    # Tab 1: OSM Acquisition Panel
-    # -----------------------------------------------------------------
     def _build_osm_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        w = QWidget()
-        scroll.setWidget(w)
-        lyt = QVBoxLayout(w)
-        lyt.setContentsMargins(8, 8, 8, 8)
-        lyt.setSpacing(8)
-
-        gb_bbox = QGroupBox("Acquisition Scope")
-        fl_bbox = QFormLayout(gb_bbox)
-
-        self.cb_extent_mode = QComboBox()
-        self.cb_extent_mode.addItems([
-            "Current Map Canvas Extent",
-            "Active Layer Extent",
-            "Custom Bounding Box",
-        ])
-        fl_bbox.addRow("Extent Source:", self.cb_extent_mode)
-
-        self.sp_default_height = QgsDoubleSpinBox()
-        self.sp_default_height.setRange(1.0, 200.0)
-        self.sp_default_height.setValue(9.0)
-        self.sp_default_height.setSuffix(" m")
-        fl_bbox.addRow("Default Height:", self.sp_default_height)
-
-        self.sp_floor_height = QgsDoubleSpinBox()
-        self.sp_floor_height.setRange(1.0, 10.0)
-        self.sp_floor_height.setValue(3.0)
-        self.sp_floor_height.setSuffix(" m")
-        fl_bbox.addRow("Floor Height:", self.sp_floor_height)
-
-        lyt.addWidget(gb_bbox)
-
-        self.lbl_osm_status = QLabel("Ready to fetch building footprints.")
-        self.lbl_osm_status.setStyleSheet("color: #64748b; font-size: 11px;")
+        page, layout = self._scroll_page()
+        acquisition = QGroupBox("Download building footprints")
+        form = QFormLayout(acquisition)
+        self.cb_osm_extent = QComboBox()
+        self.cb_osm_extent.addItem("Current map view", "map")
+        self.cb_osm_extent.addItem("Selected layer extent", "layer")
+        form.addRow("Extent", self.cb_osm_extent)
+        defaults = QLabel("Uses OSM building:levels. Missing values use the Missing levels setting above (default: 3 floors). Building height is floors x Story height.")
+        defaults.setWordWrap(True)
+        form.addRow(defaults)
+        self.lbl_osm_status = QLabel("Ready to download OSM buildings.")
         self.lbl_osm_status.setWordWrap(True)
-        lyt.addWidget(self.lbl_osm_status)
+        form.addRow(self.lbl_osm_status)
+        download_row = QHBoxLayout()
+        self.btn_download_osm = QPushButton("Download buildings and style")
+        self.btn_download_osm.setToolTip("Download OSM buildings for the chosen extent and apply the selected floor palette")
+        self.btn_download_osm.setIcon(_standard_icon(self, "SP_ArrowDown"))
+        self.btn_cancel_osm = QPushButton()
+        self.btn_cancel_osm.setIcon(_standard_icon(self, "SP_DialogCancelButton"))
+        self.btn_cancel_osm.setToolTip("Cancel the active OSM building download")
+        self.btn_cancel_osm.setAccessibleName("Cancel OSM building download")
+        self.btn_cancel_osm.setEnabled(False)
+        download_row.addWidget(self.btn_download_osm, 1)
+        download_row.addWidget(self.btn_cancel_osm)
+        form.addRow(download_row)
+        layout.addWidget(acquisition)
+        layout.addStretch()
+        return page
 
-        self.btn_download_osm = QPushButton("🌐 Download OSM 3D Buildings")
-        self.btn_download_osm.setStyleSheet("background: #065f46; color: #ffffff; font-weight: 700; padding: 8px; border-radius: 6px;")
-        self.btn_download_osm.clicked.connect(self.download_osm_buildings)
-        lyt.addWidget(self.btn_download_osm)
-
-        lyt.addStretch()
-        return scroll
-
-    # -----------------------------------------------------------------
-    # Tab 2: 2.5D Extrusion & Projection Angle
-    # -----------------------------------------------------------------
-    def _build_extrusion_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        w = QWidget()
-        scroll.setWidget(w)
-        lyt = QVBoxLayout(w)
-        lyt.setContentsMargins(8, 8, 8, 8)
-        lyt.setSpacing(8)
-
-        # Height Attributes
-        gb_h = QGroupBox("Building Height Calculation")
-        fl_h = QFormLayout(gb_h)
-
-        self.cb_height_field = QgsFieldComboBox()
-        fl_h.addRow("Height Field:", self.cb_height_field)
-
-        self.sp_multiplier = QgsDoubleSpinBox()
-        self.sp_multiplier.setRange(0.1, 10.0)
-        self.sp_multiplier.setSingleStep(0.1)
-        self.sp_multiplier.setValue(1.0)
-        fl_h.addRow("Height Scale:", self.sp_multiplier)
-
+    def _build_projection_tab(self) -> QWidget:
+        page, layout = self._scroll_page()
+        engine_box = QGroupBox("Renderer")
+        engine_form = QFormLayout(engine_box)
         self.cb_render_engine = QComboBox()
-        self.cb_render_engine.addItem("Geometry Generator (Multi-Layer & Shaded)", "geometry_generator")
-        self.cb_render_engine.addItem("Per-Floor Multi-Color Bands (Kat Kat Renkli)", "per_floor_bands")
-        self.cb_render_engine.addItem("Native QGIS 2.5D Renderer", "native")
-        fl_h.addRow("Engine:", self.cb_render_engine)
-        lyt.addWidget(gb_h)
+        self.cb_render_engine.addItem("Geometry generator", "geometry_generator")
+        self.cb_render_engine.addItem("Per-floor color bands", "per_floor_bands")
+        self.cb_render_engine.addItem("Native QGIS 2.5D", "native")
+        self.cb_render_engine.setToolTip("Choose the 2.5D rendering method")
+        engine_form.addRow("Mode", self.cb_render_engine)
+        layout.addWidget(engine_box)
 
-        # Projection Angle
-        gb_ang = QGroupBox("Projection Angle & Perspective")
-        fl_ang = QFormLayout(gb_ang)
-
-        self.slider_angle = QSlider(Qt.Horizontal)
-        self.slider_angle.setRange(0, 360)
+        angle_box = QGroupBox("Projection")
+        angle_form = QFormLayout(angle_box)
+        angle_row = QHBoxLayout()
+        self.slider_angle = QSlider(_horizontal())
+        self.slider_angle.setRange(0, 359)
         self.slider_angle.setValue(45)
-
         self.sp_angle = QSpinBox()
-        self.sp_angle.setRange(0, 360)
+        self.sp_angle.setRange(0, 359)
         self.sp_angle.setValue(45)
-        self.sp_angle.setSuffix("°")
+        self.sp_angle.setSuffix(" deg")
+        angle_row.addWidget(self.slider_angle, 2)
+        angle_row.addWidget(self.sp_angle)
+        angle_form.addRow("Direction", angle_row)
 
-        ang_row = QHBoxLayout()
-        ang_row.addWidget(self.slider_angle, 2)
-        ang_row.addWidget(self.sp_angle, 1)
-        fl_ang.addRow("Angle:", ang_row)
+        quick_grid = QGridLayout()
+        for index, (name, value) in enumerate(STANDARD_ANGLES):
+            label = name.split("(", 1)[0].strip()
+            button = QPushButton(label)
+            button.setToolTip(f"Set projection to {int(value)} degrees")
+            button.clicked.connect(lambda _checked=False, v=int(value): self.sp_angle.setValue(v))
+            quick_grid.addWidget(button, index // 2, index % 2)
+        angle_form.addRow("Quick angles", quick_grid)
+        layout.addWidget(angle_box)
+        layout.addStretch()
+        return page
+
+    def _build_lighting_tab(self) -> QWidget:
+        page, layout = self._scroll_page()
+        sun_box = QGroupBox("Facade shading")
+        sun_form = QFormLayout(sun_box)
+        self.chk_facade_shading = QCheckBox("Enabled")
+        self.chk_facade_shading.setChecked(True)
+        sun_form.addRow(self.chk_facade_shading)
+        sun_row = QHBoxLayout()
+        self.slider_sun_azimuth = QSlider(_horizontal())
+        self.slider_sun_azimuth.setRange(0, 359)
+        self.slider_sun_azimuth.setValue(315)
+        self.sp_sun_azimuth = QSpinBox()
+        self.sp_sun_azimuth.setRange(0, 359)
+        self.sp_sun_azimuth.setValue(315)
+        sun_row.addWidget(self.slider_sun_azimuth, 2)
+        sun_row.addWidget(self.sp_sun_azimuth)
+        azimuth_tip = "Native renderer has no directional control; only used in advanced modes"
+        self.slider_sun_azimuth.setToolTip(azimuth_tip)
+        self.sp_sun_azimuth.setToolTip(azimuth_tip)
+        sun_form.addRow("Azimuth", sun_row)
+        shade_row = QHBoxLayout()
+        self.slider_shading_intensity = QSlider(_horizontal())
+        self.slider_shading_intensity.setRange(0, 100)
+        self.slider_shading_intensity.setValue(40)
+        self.lbl_shading_value = QLabel("40%")
+        self.lbl_shading_value.setMinimumWidth(38)
+        shade_row.addWidget(self.slider_shading_intensity)
+        shade_row.addWidget(self.lbl_shading_value)
+        self.slider_shading_intensity.setToolTip(
+            "Native renderer only supports on/off shading; depth only applies in advanced modes"
+        )
+        sun_form.addRow("Depth", shade_row)
+        self._shading_controls = [self.slider_sun_azimuth, self.sp_sun_azimuth, self.slider_shading_intensity]
+        layout.addWidget(sun_box)
+
+        shadow_box = QGroupBox("Ground shadow")
+        shadow_form = QFormLayout(shadow_box)
+        self.chk_shadow = QCheckBox("Enabled")
+        self.chk_shadow.setChecked(True)
+        shadow_form.addRow(self.chk_shadow)
+        self.btn_shadow_color = ColorPickerButton("#0f172a")
+        shadow_form.addRow("Color", self.btn_shadow_color)
+        opacity_row = QHBoxLayout()
+        self.slider_shadow_alpha = QSlider(_horizontal())
+        self.slider_shadow_alpha.setRange(0, 100)
+        self.slider_shadow_alpha.setValue(40)
+        self.lbl_shadow_alpha = QLabel("40%")
+        self.lbl_shadow_alpha.setMinimumWidth(38)
+        opacity_row.addWidget(self.slider_shadow_alpha)
+        opacity_row.addWidget(self.lbl_shadow_alpha)
+        shadow_form.addRow("Opacity", opacity_row)
+        self.sp_shadow_blur = QgsDoubleSpinBox()
+        self.sp_shadow_blur.setRange(0.0, 50.0)
+        self.sp_shadow_blur.setValue(4.0)
+        self.sp_shadow_blur.setSuffix(" map units")
+        self.sp_shadow_blur.setToolTip("Native renderer shadow spread; retained as style metadata in advanced modes")
+        shadow_form.addRow("Spread", self.sp_shadow_blur)
+        self._shadow_controls = [self.btn_shadow_color, self.slider_shadow_alpha, self.sp_shadow_blur]
+        layout.addWidget(shadow_box)
+        layout.addStretch()
+        return page
+
+    def _build_surface_tab(self) -> QWidget:
+        page, layout = self._scroll_page()
+        material_box = QGroupBox("Materials")
+        material_form = QFormLayout(material_box)
+        self.btn_wall_color = ColorPickerButton("#7fb8b0")
+        self.btn_roof_color = ColorPickerButton("#f7c3a1")
+        self.btn_outline_color = ColorPickerButton("#3f6d66")
+        self.btn_roof_outline = ColorPickerButton("#b97350")
+        self.sp_outline_width = QgsDoubleSpinBox()
+        self.sp_outline_width.setRange(0.0, 5.0)
+        self.sp_outline_width.setValue(0.3)
+        self.sp_outline_width.setSuffix(" mm")
+        self.sp_roof_outline_width = QgsDoubleSpinBox()
+        self.sp_roof_outline_width.setRange(0.0, 5.0)
+        self.sp_roof_outline_width.setValue(0.4)
+        self.sp_roof_outline_width.setSuffix(" mm")
+        material_form.addRow("Facade", self.btn_wall_color)
+        material_form.addRow("Roof", self.btn_roof_color)
+        material_form.addRow("Facade outline", self.btn_outline_color)
+        material_form.addRow("Outline width", self.sp_outline_width)
+        material_form.addRow("Roof outline", self.btn_roof_outline)
+        material_form.addRow("Roof line width", self.sp_roof_outline_width)
+        layout.addWidget(material_box)
+
+        floor_box = QGroupBox("Floor divisions")
+        floor_form = QFormLayout(floor_box)
+        self.chk_floor_bands = QCheckBox("Enabled")
+        self.chk_floor_bands.setChecked(True)
+        floor_form.addRow(self.chk_floor_bands)
+        self.sp_band_height = QgsDoubleSpinBox()
+        self.sp_band_height.setRange(0.5, 20.0)
+        self.sp_band_height.setValue(3.2)
+        self.sp_band_height.setSuffix(" m")
+        self.btn_floor_line_col = ColorPickerButton("#cbd5e1")
+        self.sp_floor_line_w = QgsDoubleSpinBox()
+        self.sp_floor_line_w.setRange(0.0, 5.0)
+        self.sp_floor_line_w.setValue(0.2)
+        self.sp_floor_line_w.setSuffix(" mm")
+        floor_form.addRow("Story height", self.sp_band_height)
+        floor_form.addRow("Line color", self.btn_floor_line_col)
+        floor_form.addRow("Line width", self.sp_floor_line_w)
+        self._floor_controls = [self.sp_band_height, self.btn_floor_line_col, self.sp_floor_line_w]
+        layout.addWidget(floor_box)
+
+        palette_box = QGroupBox("Per-floor palette")
+        palette_form = QFormLayout(palette_box)
+        self.cb_floor_palette = QComboBox()
+        for key, value in FLOOR_BAND_PALETTES.items():
+            self.cb_floor_palette.addItem(value.get("name", key), key)
+        palette_preview = QWidget()
+        palette_preview_layout = QHBoxLayout(palette_preview)
+        palette_preview_layout.setContentsMargins(0, 0, 0, 0)
+        palette_preview_layout.setSpacing(2)
+        self.floor_palette_swatches = []
+        for _index in range(10):
+            swatch = QFrame()
+            swatch.setFixedHeight(15)
+            swatch.setMinimumWidth(16)
+            palette_preview_layout.addWidget(swatch, 1)
+            self.floor_palette_swatches.append(swatch)
+        self.sp_max_floors = QSpinBox()
+        self.sp_max_floors.setRange(0, 100)
+        self.sp_max_floors.setSpecialValueText("Auto")
+        palette_form.addRow("Palette", self.cb_floor_palette)
+        palette_form.addRow("Floors 1-10", palette_preview)
+        palette_form.addRow("Maximum floors", self.sp_max_floors)
+        self._palette_controls = [palette_box]
+        layout.addWidget(palette_box)
+        self._update_floor_palette_preview()
+        layout.addStretch()
+        return page
+
+    def _build_presets_tab(self) -> QWidget:
+        page, layout = self._scroll_page()
+        self.cb_preset = QComboBox()
+        for key, preset in PRESETS.items():
+            self.cb_preset.addItem(preset["name"], key)
+        layout.addWidget(self.cb_preset)
+        swatch_grid = QGridLayout()
+        swatch_grid.setSpacing(4)
+        self.preset_swatches = []
+        for column, title in enumerate(("Facade", "Roof", "Outline")):
+            label = QLabel(title)
+            label.setAlignment(getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignCenter", getattr(Qt, "AlignCenter", 132)))
+            swatch = QFrame()
+            swatch.setMinimumHeight(24)
+            swatch.setAccessibleName(f"Preset {title.lower()} color")
+            swatch_grid.addWidget(label, 0, column)
+            swatch_grid.addWidget(swatch, 1, column)
+            self.preset_swatches.append(swatch)
+        layout.addLayout(swatch_grid)
+        self.lbl_preset_description = QLabel()
+        self.lbl_preset_description.setWordWrap(True)
+        layout.addWidget(self.lbl_preset_description)
+        self.btn_apply_preset = QPushButton("Use preset")
+        self.btn_apply_preset.setIcon(_standard_icon(self, "SP_CommandLink"))
+        layout.addWidget(self.btn_apply_preset)
+        layout.addStretch()
+        self._update_preset_summary()
+        return page
+
+    def _connect_signals(self) -> None:
+        self.cb_layer.layerChanged.connect(self._on_layer_changed)
+        self.cb_height_field.fieldChanged.connect(self._schedule_auto_apply)
+        self.btn_download_osm.clicked.connect(self.download_osm_buildings)
+        self.btn_cancel_osm.clicked.connect(self.cancel_download)
+        self.btn_apply.clicked.connect(self.apply_current_style)
+        self.btn_restore.clicked.connect(self.restore_previous_style)
+        self.btn_import_qml.clicked.connect(self.import_qml)
+        self.btn_export_qml.clicked.connect(self.export_qml)
+        self.btn_apply_preset.clicked.connect(self.apply_selected_preset)
+        self.cb_preset.currentIndexChanged.connect(self._update_preset_summary)
+        self.cb_floor_palette.currentIndexChanged.connect(self._update_floor_palette_preview)
+        self.tabs.currentChanged.connect(self._save_settings)
+        self.chk_auto_apply.toggled.connect(self._save_settings)
 
         self.slider_angle.valueChanged.connect(self.sp_angle.setValue)
         self.sp_angle.valueChanged.connect(self.slider_angle.setValue)
-
-        # Quick Angle Presets
-        angle_btns_grid = QGridLayout()
-        angles = [
-            ("Isometric (45°)", 45),
-            ("Oblique (30°)", 30),
-            ("Cavalier (60°)", 60),
-            ("Plan Oblique (135°)", 135),
-        ]
-        for i, (txt, val) in enumerate(angles):
-            btn = QPushButton(txt)
-            btn.setStyleSheet("font-size: 10px; padding: 3px;")
-            btn.clicked.connect(lambda chk, v=val: self.sp_angle.setValue(v))
-            angle_btns_grid.addWidget(btn, i // 2, i % 2)
-
-        fl_ang.addRow("Standard Angles:", angle_btns_grid)
-        lyt.addWidget(gb_ang)
-
-        lyt.addStretch()
-        return scroll
-
-    # -----------------------------------------------------------------
-    # Tab 3: Lighting & Shadows
-    # -----------------------------------------------------------------
-    def _build_lighting_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        w = QWidget()
-        scroll.setWidget(w)
-        lyt = QVBoxLayout(w)
-        lyt.setContentsMargins(8, 8, 8, 8)
-        lyt.setSpacing(8)
-
-        # Solar Illumination
-        gb_sun = QGroupBox("Solar Illumination & Facade Shading")
-        fl_sun = QFormLayout(gb_sun)
-
-        self.chk_facade_shading = QCheckBox("Enable Dynamic Solar Shading")
-        self.chk_facade_shading.setChecked(True)
-        fl_sun.addRow(self.chk_facade_shading)
-
-        self.slider_sun_azimuth = QSlider(Qt.Horizontal)
-        self.slider_sun_azimuth.setRange(0, 360)
-        self.slider_sun_azimuth.setValue(315)
-        self.sp_sun_azimuth = QSpinBox()
-        self.sp_sun_azimuth.setRange(0, 360)
-        self.sp_sun_azimuth.setValue(315)
-        self.sp_sun_azimuth.setSuffix("° (NW)")
-        sun_row = QHBoxLayout()
-        sun_row.addWidget(self.slider_sun_azimuth, 2)
-        sun_row.addWidget(self.sp_sun_azimuth, 1)
-        fl_sun.addRow("Sun Azimuth:", sun_row)
         self.slider_sun_azimuth.valueChanged.connect(self.sp_sun_azimuth.setValue)
         self.sp_sun_azimuth.valueChanged.connect(self.slider_sun_azimuth.setValue)
+        self.sp_sun_azimuth.valueChanged.connect(self._update_direction_label)
+        self.slider_shading_intensity.valueChanged.connect(lambda value: self.lbl_shading_value.setText(f"{value}%"))
+        self.slider_shadow_alpha.valueChanged.connect(lambda value: self.lbl_shadow_alpha.setText(f"{value}%"))
 
-        self.slider_shading_intensity = QSlider(Qt.Horizontal)
-        self.slider_shading_intensity.setRange(0, 100)
-        self.slider_shading_intensity.setValue(40)
-        fl_sun.addRow("Shading Depth:", self.slider_shading_intensity)
-        lyt.addWidget(gb_sun)
+        self.chk_facade_shading.toggled.connect(self._update_dependent_controls)
+        self.chk_shadow.toggled.connect(self._update_dependent_controls)
+        self.chk_floor_bands.toggled.connect(self._update_dependent_controls)
+        self.cb_render_engine.currentIndexChanged.connect(self._update_dependent_controls)
 
-        # Ground Drop Shadow
-        gb_shadow = QGroupBox("Ground Drop Shadow")
-        fl_shadow = QFormLayout(gb_shadow)
-
-        self.chk_shadow = QCheckBox("Enable Ground Drop Shadow")
-        self.chk_shadow.setChecked(True)
-        fl_shadow.addRow(self.chk_shadow)
-
-        self.btn_shadow_color = ColorPickerButton("#0f172a")
-        fl_shadow.addRow("Shadow Color:", self.btn_shadow_color)
-
-        self.slider_shadow_alpha = QSlider(Qt.Horizontal)
-        self.slider_shadow_alpha.setRange(0, 100)
-        self.slider_shadow_alpha.setValue(40)
-        fl_shadow.addRow("Shadow Opacity (%):", self.slider_shadow_alpha)
-
-        self.sp_shadow_blur = QgsDoubleSpinBox()
-        self.sp_shadow_blur.setRange(0.0, 20.0)
-        self.sp_shadow_blur.setValue(4.0)
-        self.sp_shadow_blur.setSuffix(" mm")
-        fl_shadow.addRow("Blur Radius:", self.sp_shadow_blur)
-
-        lyt.addWidget(gb_shadow)
-        lyt.addStretch()
-        return scroll
-
-    # -----------------------------------------------------------------
-    # Tab 4: Facade & Floor Bands
-    # -----------------------------------------------------------------
-    def _build_facade_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        w = QWidget()
-        scroll.setWidget(w)
-        lyt = QVBoxLayout(w)
-        lyt.setContentsMargins(8, 8, 8, 8)
-        lyt.setSpacing(8)
-
-        # Materials & Colors
-        gb_col = QGroupBox("Building Massing Materials")
-        fl_col = QFormLayout(gb_col)
-
-        self.btn_wall_color = ColorPickerButton("#e2e8f0")
-        fl_col.addRow("Wall / Facade:", self.btn_wall_color)
-
-        self.btn_roof_color = ColorPickerButton("#ffffff")
-        fl_col.addRow("Roof Cap:", self.btn_roof_color)
-
-        self.btn_outline_color = ColorPickerButton("#475569")
-        fl_col.addRow("Wall Outline:", self.btn_outline_color)
-
-        self.sp_outline_width = QgsDoubleSpinBox()
-        self.sp_outline_width.setRange(0.0, 2.0)
-        self.sp_outline_width.setSingleStep(0.05)
-        self.sp_outline_width.setValue(0.3)
-        self.sp_outline_width.setSuffix(" mm")
-        fl_col.addRow("Outline Width:", self.sp_outline_width)
-
-        self.btn_roof_outline = ColorPickerButton("#334155")
-        fl_col.addRow("Roof Outline:", self.btn_roof_outline)
-
-        self.sp_roof_outline_width = QgsDoubleSpinBox()
-        self.sp_roof_outline_width.setRange(0.0, 2.0)
-        self.sp_roof_outline_width.setSingleStep(0.05)
-        self.sp_roof_outline_width.setValue(0.4)
-        self.sp_roof_outline_width.setSuffix(" mm")
-        fl_col.addRow("Roof Edge Width:", self.sp_roof_outline_width)
-
-        lyt.addWidget(gb_col)
-
-        # Floor Band Divisions
-        gb_floors = QGroupBox("Architectural Floor Bands (Mullions)")
-        fl_floors = QFormLayout(gb_floors)
-
-        self.chk_floor_bands = QCheckBox("Enable Floor Division Lines")
-        self.chk_floor_bands.setChecked(True)
-        fl_floors.addRow(self.chk_floor_bands)
-
-        self.sp_band_height = QgsDoubleSpinBox()
-        self.sp_band_height.setRange(1.0, 20.0)
-        self.sp_band_height.setValue(3.2)
-        self.sp_band_height.setSuffix(" m")
-        fl_floors.addRow("Story Height:", self.sp_band_height)
-
-        self.btn_floor_line_col = ColorPickerButton("#cbd5e1")
-        fl_floors.addRow("Floor Line Color:", self.btn_floor_line_col)
-
-        self.sp_floor_line_w = QgsDoubleSpinBox()
-        self.sp_floor_line_w.setRange(0.05, 1.5)
-        self.sp_floor_line_w.setSingleStep(0.05)
-        self.sp_floor_line_w.setValue(0.2)
-        self.sp_floor_line_w.setSuffix(" mm")
-        fl_floors.addRow("Floor Line Width:", self.sp_floor_line_w)
-
-        lyt.addWidget(gb_floors)
-
-        # Per-Floor Multi-Color Bands (Kat Kat Renkli Cepheler)
-        gb_multicolor = QGroupBox("🌈 Per-Floor Multi-Color Palette (Kat Kat Renkli)")
-        fl_multi = QFormLayout(gb_multicolor)
-
-        self.chk_per_floor_colors = QCheckBox("Color Each Floor & Wall Differently")
-        self.chk_per_floor_colors.setChecked(False)
-        self.chk_per_floor_colors.setStyleSheet("font-weight: 700; color: #1e293b;")
-        fl_multi.addRow(self.chk_per_floor_colors)
-
-        self.cb_floor_palette = QComboBox()
-        for pkey, pdata in FLOOR_BAND_PALETTES.items():
-            self.cb_floor_palette.addItem(pdata.get("name", pkey), pkey)
-        fl_multi.addRow("Color Palette:", self.cb_floor_palette)
-
-        self.sp_max_floors = QSpinBox()
-        self.sp_max_floors.setRange(0, 60)
-        self.sp_max_floors.setValue(0)
-        self.sp_max_floors.setSpecialValueText("Auto (Layer Max)")
-        fl_multi.addRow("Max Floors:", self.sp_max_floors)
-
-        # Sync toggle with render engine
-        self.chk_per_floor_colors.toggled.connect(self._on_per_floor_toggled)
-
-        lyt.addWidget(gb_multicolor)
-        lyt.addStretch()
-        return scroll
-
-    # -----------------------------------------------------------------
-    # Tab 5: Architectural Presets & QML
-    # -----------------------------------------------------------------
-    def _build_presets_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        w = QWidget()
-        scroll.setWidget(w)
-        lyt = QVBoxLayout(w)
-        lyt.setContentsMargins(8, 8, 8, 8)
-        lyt.setSpacing(6)
-
-        lbl = QLabel("1-Click Curated Architectural Archetypes:")
-        lbl.setStyleSheet("font-weight: 700; color: #1e293b; font-size: 11px;")
-        lyt.addWidget(lbl)
-
-        for key, p in PRESETS.items():
-            btn = QPushButton(f"{p['name']}\n{p['description']}")
-            btn.setProperty("class", "presetCardBtn")
-            btn.setStyleSheet(
-                "QPushButton { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; "
-                "padding: 6px 10px; text-align: left; font-size: 11px; } "
-                "QPushButton:hover { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }"
-            )
-            btn.clicked.connect(lambda chk, k=key: self.apply_preset(k))
-            lyt.addWidget(btn)
-
-        lyt.addStretch()
-        return scroll
-
-    # -----------------------------------------------------------------
-    # Signal Connections & Live Updates
-    # -----------------------------------------------------------------
-    def _connect_signals(self) -> None:
-        self.cb_layer.layerChanged.connect(self._on_layer_changed)
-
-        # Connect live auto-apply triggers
         controls = [
-            self.sp_multiplier,
-            self.cb_render_engine,
-            self.sp_angle,
-            self.chk_facade_shading,
-            self.sp_sun_azimuth,
-            self.slider_shading_intensity,
-            self.chk_shadow,
-            self.slider_shadow_alpha,
-            self.sp_shadow_blur,
-            self.sp_outline_width,
-            self.sp_roof_outline_width,
-            self.chk_floor_bands,
-            self.sp_band_height,
-            self.sp_floor_line_w,
-            self.chk_per_floor_colors,
-            self.cb_floor_palette,
-            self.sp_max_floors,
+            self.sp_default_height, self.sp_default_levels, self.sp_multiplier, self.cb_render_engine, self.sp_angle,
+            self.chk_facade_shading, self.sp_sun_azimuth, self.slider_shading_intensity,
+            self.chk_shadow, self.slider_shadow_alpha, self.sp_shadow_blur,
+            self.sp_outline_width, self.sp_roof_outline_width, self.chk_floor_bands,
+            self.sp_band_height, self.sp_floor_line_w, self.cb_floor_palette, self.sp_max_floors,
         ]
-        for c in controls:
-            if hasattr(c, "valueChanged"):
-                c.valueChanged.connect(self._maybe_auto_apply)
-            elif hasattr(c, "currentIndexChanged"):
-                c.currentIndexChanged.connect(self._maybe_auto_apply)
-            elif hasattr(c, "toggled"):
-                c.toggled.connect(self._maybe_auto_apply)
+        for control in controls:
+            if hasattr(control, "valueChanged"):
+                control.valueChanged.connect(self._schedule_auto_apply)
+            elif hasattr(control, "currentIndexChanged"):
+                control.currentIndexChanged.connect(self._schedule_auto_apply)
+            elif hasattr(control, "toggled"):
+                control.toggled.connect(self._schedule_auto_apply)
+        for button in (
+            self.btn_wall_color, self.btn_roof_color, self.btn_outline_color,
+            self.btn_roof_outline, self.btn_shadow_color, self.btn_floor_line_col,
+        ):
+            button.colorChanged.connect(self._schedule_auto_apply)
 
-        color_btns = [
-            self.btn_wall_color,
-            self.btn_roof_color,
-            self.btn_outline_color,
-            self.btn_shadow_color,
-            self.btn_roof_outline,
-            self.btn_floor_line_col,
-        ]
-        for btn in color_btns:
-            btn.colorChanged.connect(self._maybe_auto_apply)
-
-    def _on_per_floor_toggled(self, checked: bool) -> None:
-        if self._updating_controls:
-            return
-        if checked:
-            idx = self.cb_render_engine.findData("per_floor_bands")
-            if idx >= 0:
-                self.cb_render_engine.setCurrentIndex(idx)
-        else:
-            if self.cb_render_engine.currentData() == "per_floor_bands":
-                self.cb_render_engine.setCurrentIndex(0)
+    def _is_polygon_layer(self, layer: Optional[QgsMapLayer]) -> bool:
+        polygon = getattr(getattr(QgsWkbTypes, "GeometryType", QgsWkbTypes), "PolygonGeometry", getattr(QgsWkbTypes, "PolygonGeometry", 2))
+        return isinstance(layer, QgsVectorLayer) and layer.isValid() and layer.geometryType() == polygon
 
     def _on_layer_changed(self, layer: Optional[QgsMapLayer]) -> None:
-        if isinstance(layer, QgsVectorLayer) and layer.isValid():
-            self.cb_height_field.setLayer(layer)
-            # Try to auto-select 'height' or 'building_levels'
-            for fname in ("height", "building_levels", "levels", "kat", "floors", "h"):
-                idx = layer.fields().indexOf(fname)
-                if idx >= 0:
-                    self.cb_height_field.setField(fname)
-                    break
+        valid = self._is_polygon_layer(layer)
+        self._updating_controls = True
+        try:
+            self.cb_height_field.setLayer(layer if valid else None)
+        finally:
+            self._updating_controls = False
+        for button in (self.btn_apply, self.btn_import_qml, self.btn_export_qml):
+            button.setEnabled(valid)
+        self.btn_restore.setEnabled(valid and bool(layer and layer.id() in self._original_renderers))
+        if not valid:
+            self.lbl_state.setText("No polygon layer")
+            self.lbl_diagnostics.setText("Add or select a polygon layer to begin.")
+            return
 
-    def _maybe_auto_apply(self, *args) -> None:
+        selected = choose_height_field(field.name() for field in layer.fields())
+        if selected:
+            self._updating_controls = True
+            try:
+                self.cb_height_field.setField(selected)
+            finally:
+                self._updating_controls = False
+        self.lbl_state.setText(f"{layer.featureCount():,} features")
+        crs_label = layer.crs().authid() or "Unknown CRS"
+        units = "geographic" if layer.crs().isGeographic() else "projected"
+        field_label = selected or "constant fallback height"
+        warning = " Reproject to a metric CRS for consistent height." if layer.crs().isGeographic() else ""
+        self.lbl_diagnostics.setText(f"{crs_label} ({units}) | Height: {field_label}.{warning}")
+
+    def _update_dependent_controls(self, *_args) -> None:
+        advanced = self.cb_render_engine.currentData() != "native"
+        for widget in self._shading_controls:
+            widget.setEnabled(advanced and self.chk_facade_shading.isChecked())
+        for widget in self._shadow_controls:
+            widget.setEnabled(self.chk_shadow.isChecked())
+        self.chk_floor_bands.setEnabled(advanced)
+        for widget in self._floor_controls:
+            widget.setEnabled(advanced and self.chk_floor_bands.isChecked())
+        per_floor = self.cb_render_engine.currentData() == "per_floor_bands"
+        for widget in self._palette_controls:
+            widget.setEnabled(per_floor)
+        self._update_direction_label()
+
+    def _update_direction_label(self, *_args) -> None:
+        self.sp_sun_azimuth.setSuffix(f" deg {compass_direction(self.sp_sun_azimuth.value())}")
+
+    def _update_preset_summary(self, *_args) -> None:
+        key = self.cb_preset.currentData() if hasattr(self, "cb_preset") else None
+        preset = PRESETS.get(key, {})
+        self.lbl_preset_description.setText(preset.get("description", ""))
+        wall = preset.get("wall_color", "#7fb8b0")
+        roof = preset.get("roof_color", "#f7c3a1")
+        outline = preset.get("outline_color", "#3f6d66")
+        for swatch, color in zip(self.preset_swatches, (wall, roof, outline)):
+            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid palette(mid); border-radius: 3px;")
+
+    def _update_floor_palette_preview(self, *_args) -> None:
+        key = self.cb_floor_palette.currentData() if hasattr(self, "cb_floor_palette") else "civic_spectrum"
+        colors = FLOOR_BAND_PALETTES.get(key, FLOOR_BAND_PALETTES["civic_spectrum"])["colors"]
+        for index, swatch in enumerate(self.floor_palette_swatches):
+            color = colors[index % len(colors)]
+            swatch.setToolTip(f"Floor {index + 1}: {color}")
+            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid palette(mid);")
+
+    def _schedule_auto_apply(self, *_args) -> None:
         if self._updating_controls:
             return
-        if self.chk_auto_apply.isChecked():
-            self.apply_current_style()
+        self._save_settings()
+        if not self.chk_auto_apply.isChecked():
+            self.lbl_apply_status.setText("Changes pending")
+            return
+        layer = self.cb_layer.currentLayer()
+        if not self._is_polygon_layer(layer):
+            return
+        delay = 650 if layer.featureCount() > 10000 else 250
+        if layer.featureCount() > 100000:
+            self.lbl_apply_status.setText("Preview paused for large layer")
+            return
+        self.lbl_apply_status.setText("Preview pending")
+        self._apply_timer.start(delay)
 
     def get_current_config(self) -> Dict[str, Any]:
-        """Harvest current GUI parameters into a configuration dictionary."""
-        engine_data = self.cb_render_engine.currentData()
-        if self.chk_per_floor_colors.isChecked() or engine_data == "per_floor_bands":
-            render_mode = "per_floor_bands"
-        elif engine_data == "native":
-            render_mode = "native"
-        else:
-            render_mode = "geometry_generator"
-
-        palette_data = self.cb_floor_palette.currentData() or "civic_spectrum"
-
-        return {
-            "height_field": self.cb_height_field.currentField() or "height",
+        return normalize_config({
+            "height_field": self.cb_height_field.currentField(),
             "height_multiplier": self.sp_multiplier.value(),
-            "render_mode": render_mode,
-            "use_geometry_generator": (render_mode == "geometry_generator"),
-            "per_floor_bands": (render_mode == "per_floor_bands"),
-            "floor_palette": palette_data,
-            "max_floors": self.sp_max_floors.value(),
-            "projection_angle": float(self.sp_angle.value()),
+            "default_height": self.sp_default_height.value(),
+            "default_levels": self.sp_default_levels.value(),
+            "render_mode": self.cb_render_engine.currentData(),
+            "projection_angle": self.sp_angle.value(),
             "wall_color": self.btn_wall_color.color().name(),
             "roof_color": self.btn_roof_color.color().name(),
             "outline_color": self.btn_outline_color.color().name(),
@@ -690,8 +630,8 @@ class StylingDockWidget(QDockWidget):
             "roof_outline_color": self.btn_roof_outline.color().name(),
             "roof_outline_width": self.sp_roof_outline_width.value(),
             "facade_shading": self.chk_facade_shading.isChecked(),
-            "sun_azimuth": float(self.sp_sun_azimuth.value()),
-            "shading_intensity": float(self.slider_shading_intensity.value()) / 100.0,
+            "sun_azimuth": self.sp_sun_azimuth.value(),
+            "shading_intensity": self.slider_shading_intensity.value() / 100.0,
             "shadow_enabled": self.chk_shadow.isChecked(),
             "shadow_color": self.btn_shadow_color.color().name(),
             "shadow_alpha": self.slider_shadow_alpha.value(),
@@ -700,188 +640,267 @@ class StylingDockWidget(QDockWidget):
             "floor_height_m": self.sp_band_height.value(),
             "floor_line_color": self.btn_floor_line_col.color().name(),
             "floor_line_width": self.sp_floor_line_w.value(),
-        }
+            "floor_palette": self.cb_floor_palette.currentData(),
+            "max_floors": self.sp_max_floors.value(),
+        })
 
-    def load_config_into_ui(self, cfg: Dict[str, Any]) -> None:
-        """Load a configuration dictionary into UI widgets without firing auto-apply on each step."""
+    def load_config_into_ui(self, config: Dict[str, Any]) -> None:
+        cfg = normalize_config(config)
         self._updating_controls = True
         try:
-            if "wall_color" in cfg:
-                self.btn_wall_color.setColor(cfg["wall_color"])
-            if "roof_color" in cfg:
-                self.btn_roof_color.setColor(cfg["roof_color"])
-            if "outline_color" in cfg:
-                self.btn_outline_color.setColor(cfg["outline_color"])
-            if "outline_width" in cfg:
-                self.sp_outline_width.setValue(float(cfg["outline_width"]))
-            if "roof_outline_color" in cfg:
-                self.btn_roof_outline.setColor(cfg["roof_outline_color"])
-            if "roof_outline_width" in cfg:
-                self.sp_roof_outline_width.setValue(float(cfg["roof_outline_width"]))
-            if "projection_angle" in cfg:
-                self.sp_angle.setValue(int(cfg["projection_angle"]))
-            if "sun_azimuth" in cfg:
-                self.sp_sun_azimuth.setValue(int(cfg["sun_azimuth"]))
-            if "facade_shading" in cfg:
-                self.chk_facade_shading.setChecked(bool(cfg["facade_shading"]))
-            if "shading_intensity" in cfg:
-                self.slider_shading_intensity.setValue(int(cfg["shading_intensity"] * 100))
-            if "shadow_enabled" in cfg:
-                self.chk_shadow.setChecked(bool(cfg["shadow_enabled"]))
-            if "shadow_color" in cfg:
-                self.btn_shadow_color.setColor(cfg["shadow_color"])
-            if "shadow_alpha" in cfg:
-                self.slider_shadow_alpha.setValue(int(cfg["shadow_alpha"]))
-            if "shadow_blur" in cfg:
-                self.sp_shadow_blur.setValue(float(cfg["shadow_blur"]))
-            if "floor_bands_enabled" in cfg:
-                self.chk_floor_bands.setChecked(bool(cfg["floor_bands_enabled"]))
-            if "floor_height_m" in cfg:
-                self.sp_band_height.setValue(float(cfg["floor_height_m"]))
-            if "floor_line_color" in cfg:
-                self.btn_floor_line_col.setColor(cfg["floor_line_color"])
-            if "floor_line_width" in cfg:
-                self.sp_floor_line_w.setValue(float(cfg["floor_line_width"]))
+            mode_index = self.cb_render_engine.findData(cfg["render_mode"])
+            self.cb_render_engine.setCurrentIndex(max(0, mode_index))
+            if cfg["height_field"]:
+                self.cb_height_field.setField(cfg["height_field"])
+            self.sp_multiplier.setValue(cfg["height_multiplier"])
+            self.sp_default_height.setValue(cfg["default_height"])
+            self.sp_default_levels.setValue(cfg["default_levels"])
+            self.sp_angle.setValue(int(cfg["projection_angle"]))
+            self.btn_wall_color.setColor(cfg["wall_color"])
+            self.btn_roof_color.setColor(cfg["roof_color"])
+            self.btn_outline_color.setColor(cfg["outline_color"])
+            self.sp_outline_width.setValue(cfg["outline_width"])
+            self.btn_roof_outline.setColor(cfg["roof_outline_color"])
+            self.sp_roof_outline_width.setValue(cfg["roof_outline_width"])
+            self.chk_facade_shading.setChecked(cfg["facade_shading"])
+            self.sp_sun_azimuth.setValue(int(cfg["sun_azimuth"]))
+            self.slider_shading_intensity.setValue(int(cfg["shading_intensity"] * 100))
+            self.chk_shadow.setChecked(cfg["shadow_enabled"])
+            self.btn_shadow_color.setColor(cfg["shadow_color"])
+            self.slider_shadow_alpha.setValue(cfg["shadow_alpha"])
+            self.sp_shadow_blur.setValue(cfg["shadow_blur"])
+            self.chk_floor_bands.setChecked(cfg["floor_bands_enabled"])
+            self.sp_band_height.setValue(cfg["floor_height_m"])
+            self.btn_floor_line_col.setColor(cfg["floor_line_color"])
+            self.sp_floor_line_w.setValue(cfg["floor_line_width"])
+            palette_index = self.cb_floor_palette.findData(cfg["floor_palette"])
+            self.cb_floor_palette.setCurrentIndex(max(0, palette_index))
+            self.sp_max_floors.setValue(cfg["max_floors"])
         finally:
             self._updating_controls = False
-
-    def apply_current_style(self) -> None:
-        """Apply current configuration to the selected polygon layer."""
-        layer = self.cb_layer.currentLayer()
-        if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
-            if self.iface and hasattr(self.iface, "messageBar"):
-                self.iface.messageBar().pushWarning("2.5D Styling", "Please select a valid polygon vector layer first.")
-            return
-
-        cfg = self.get_current_config()
-        success = apply_25d_style(layer, cfg)
-        if success:
-            layer.emitStyleChanged()
-            layer.triggerRepaint()
-            if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
-                self.iface.mapCanvas().refresh()
-
-    def apply_preset(self, preset_key: str) -> None:
-        """Load and apply preset archetype."""
-        if preset_key in PRESETS:
-            cfg = dict(PRESETS[preset_key])
-            self.load_config_into_ui(cfg)
-            self.apply_current_style()
-            if self.iface and hasattr(self.iface, "messageBar"):
-                self.iface.messageBar().pushSuccess("2.5D Styling", f"Applied preset: {PRESETS[preset_key]['name']}")
-
-    def reset_to_2d(self) -> None:
-        """Reset the layer to standard 2D flat symbology."""
-        layer = self.cb_layer.currentLayer()
-        if isinstance(layer, QgsVectorLayer) and layer.isValid():
-            sym = QgsFillSymbol.createSimple({
-                "color": "#cbd5e1",
-                "outline_color": "#334155",
-                "outline_width": "0.3",
-            })
-            layer.setRenderer(QgsSingleSymbolRenderer(sym))
-            layer.emitStyleChanged()
-            layer.triggerRepaint()
-            if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
-                self.iface.mapCanvas().refresh()
-            if self.iface and hasattr(self.iface, "messageBar"):
-                self.iface.messageBar().pushInfo("2.5D Styling", "Reset layer to standard 2D flat fill.")
-
-    def export_qml(self) -> None:
-        """Export current style to .qml file."""
-        layer = self.cb_layer.currentLayer()
-        if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
-            QMessageBox.warning(self, "Export QML", "Please select a valid vector layer first.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(self, "Export 2.5D QML Style", "style_25d.qml", "QGIS Layer Style (*.qml)")
-        if path:
-            if export_layer_qml(layer, path):
-                QMessageBox.information(self, "Export QML", f"Saved style to:\n{path}")
-            else:
-                QMessageBox.critical(self, "Export QML", "Failed to export QML style.")
+        self._update_dependent_controls()
+        self._update_floor_palette_preview()
 
     def download_osm_buildings(self) -> None:
-        """Download OSM building footprints for the current extent and apply 2.5D styling."""
+        """Download OSM buildings asynchronously and apply per-floor 2.5D styling."""
+        if self._osm_task is not None:
+            self.lbl_osm_status.setText("A building download is already running.")
+            return
         if not self.iface or not self.iface.mapCanvas():
-            QMessageBox.warning(self, "OSM Fetch", "No active map canvas found.")
+            QMessageBox.warning(self, "OSM Buildings", "No active QGIS map canvas is available.")
             return
 
         canvas = self.iface.mapCanvas()
-        mode_idx = self.cb_extent_mode.currentIndex()
-
-        if mode_idx == 0:
-            # Map canvas extent
-            rect = canvas.extent()
-            src_crs = canvas.mapSettings().destinationCrs()
-        elif mode_idx == 1:
-            # Active layer extent
-            lyr = self.cb_layer.currentLayer()
-            if not lyr:
-                QMessageBox.warning(self, "OSM Fetch", "No active layer selected.")
+        if self.cb_osm_extent.currentData() == "layer":
+            source_layer = self.cb_layer.currentLayer()
+            if not source_layer:
+                QMessageBox.warning(self, "OSM Buildings", "Select a layer before using its extent.")
                 return
-            rect = lyr.extent()
-            src_crs = lyr.crs()
+            rect = source_layer.extent()
+            source_crs = source_layer.crs()
         else:
             rect = canvas.extent()
-            src_crs = canvas.mapSettings().destinationCrs()
+            source_crs = canvas.mapSettings().destinationCrs()
 
-        # Transform extent to EPSG:4326 WGS84 for Overpass query
         wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
-        trans = QgsCoordinateTransform(src_crs, wgs84, QgsProject.instance())
-        wgs_rect = trans.transformBoundingBox(rect)
-
-        # Bounding box safety check (limit query size)
-        d_lat = abs(wgs_rect.yMaximum() - wgs_rect.yMinimum())
-        d_lon = abs(wgs_rect.xMaximum() - wgs_rect.xMinimum())
-        if d_lat > 0.35 or d_lon > 0.35:
-            res = QMessageBox.question(
+        transform = QgsCoordinateTransform(source_crs, wgs84, QgsProject.instance())
+        wgs_rect = transform.transformBoundingBox(rect)
+        latitude_span = abs(wgs_rect.yMaximum() - wgs_rect.yMinimum())
+        longitude_span = abs(wgs_rect.xMaximum() - wgs_rect.xMinimum())
+        if latitude_span > 0.35 or longitude_span > 0.35:
+            QMessageBox.warning(
                 self,
-                "Large Area Warning",
-                "The requested extent is quite large (>30km) and may take longer or timeout.\nDo you want to continue?",
-                QMessageBox.Yes | QMessageBox.No,
+                "OSM Buildings",
+                "The selected extent is too large for a reliable building request. Zoom in to an area smaller than about 30 km.",
             )
-            if res != QMessageBox.Yes:
-                return
+            return
 
-        self.lbl_osm_status.setText("⏳ Querying Overpass API mirrors for building footprints...")
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        query = build_overpass_building_query(
+            wgs_rect.yMinimum(), wgs_rect.xMinimum(),
+            wgs_rect.yMaximum(), wgs_rect.xMaximum(),
+        )
+        self._osm_default_levels = self.sp_default_levels.value()
+        self._osm_floor_height = self.sp_band_height.value()
+        self._osm_cancel_requested = False
+        self.btn_download_osm.setEnabled(False)
+        self.btn_cancel_osm.setEnabled(True)
+        self.lbl_osm_status.setText("Downloading building footprints from Overpass...")
+
+        def fetch(task):
+            if task.isCanceled():
+                return None
+            return fetch_overpass_json(query)
+
+        self._osm_task = QgsTask.fromFunction(
+            "Download OSM buildings for 2.5D styling",
+            fetch,
+            on_finished=self._osm_download_finished,
+        )
+        QgsApplication.taskManager().addTask(self._osm_task)
+
+    def _osm_download_finished(self, exception, osm_data) -> None:
+        self.btn_download_osm.setEnabled(True)
+        self.btn_cancel_osm.setEnabled(False)
+        self._osm_task = None
+        if self._osm_cancel_requested:
+            self._osm_cancel_requested = False
+            self.lbl_osm_status.setText("OSM building download canceled.")
+            return
+        if exception is not None:
+            self.lbl_osm_status.setText(f"Download failed: {exception}")
+            if self.iface and hasattr(self.iface, "messageBar"):
+                self.iface.messageBar().pushCritical("2.5D Styling", str(exception))
+            return
+        if not osm_data or not osm_data.get("elements"):
+            self.lbl_osm_status.setText("No OSM buildings were found in this extent.")
+            return
+
+        layer = osm_json_to_vector_layer(
+            osm_data,
+            target_crs=None,
+            layer_name="OSM Buildings - 2.5D Floors",
+            default_levels=self._osm_default_levels,
+            floor_height_m=self._osm_floor_height,
+        )
+        if not layer or layer.featureCount() == 0:
+            self.lbl_osm_status.setText("OSM returned data, but no valid building polygons were created.")
+            return
+
+        QgsProject.instance().addMapLayer(layer)
+        self._updating_controls = True
         try:
-            q = build_overpass_building_query(
-                wgs_rect.yMinimum(),
-                wgs_rect.xMinimum(),
-                wgs_rect.yMaximum(),
-                wgs_rect.xMaximum(),
-            )
-            osm_data = fetch_overpass_json(q)
-            count = len(osm_data.get("elements", []))
-
-            if count == 0:
-                self.lbl_osm_status.setText("No building footprints found in this extent.")
-                QMessageBox.information(self, "OSM Fetch", "No building footprints found in the selected extent.")
-                return
-
-            self.lbl_osm_status.setText(f"Found {count} OSM elements. Building vector layer...")
-            dest_crs = canvas.mapSettings().destinationCrs()
-            layer = osm_json_to_vector_layer(
-                osm_data,
-                target_crs=dest_crs,
-                layer_name=f"OSM_Buildings_25D",
-                default_height=self.sp_default_height.value(),
-                floor_height_m=self.sp_floor_height.value(),
-            )
-
-            if layer and layer.featureCount() > 0:
-                QgsProject.instance().addMapLayer(layer)
-                self.cb_layer.setLayer(layer)
-                self.apply_current_style()
-                self.lbl_osm_status.setText(f"✅ Loaded {layer.featureCount()} 3D buildings successfully.")
-                if hasattr(self.iface, "messageBar"):
-                    self.iface.messageBar().pushSuccess("2.5D Styling", f"Acquired {layer.featureCount()} OSM 3D buildings.")
-            else:
-                self.lbl_osm_status.setText("Failed to construct building polygon geometries.")
-        except Exception as exc:
-            self.lbl_osm_status.setText(f"❌ Error: {exc}")
-            QMessageBox.critical(self, "OSM Download Error", str(exc))
+            self.cb_layer.setLayer(layer)
+            self.cb_height_field.setField("building_levels")
+            self.sp_default_height.setValue(self._osm_default_levels * self._osm_floor_height)
+            mode_index = self.cb_render_engine.findData("per_floor_bands")
+            self.cb_render_engine.setCurrentIndex(max(0, mode_index))
         finally:
-            QApplication.restoreOverrideCursor()
+            self._updating_controls = False
+
+        fallback_count = sum(
+            1 for feature in layer.getFeatures()
+            if feature["levels_source"] == "default"
+        )
+        self.apply_current_style()
+        self.tabs.setCurrentIndex(3)
+        self.lbl_osm_status.setText(
+            f"Loaded {layer.featureCount():,} buildings. "
+            f"OSM levels used where available; {fallback_count:,} buildings use the "
+            f"{self._osm_default_levels}-floor default."
+        )
+
+    def cancel_download(self) -> None:
+        if self._osm_task is not None:
+            self._osm_cancel_requested = True
+            self.btn_cancel_osm.setEnabled(False)
+            self.lbl_osm_status.setText("Canceling OSM building download...")
+            self._osm_task.cancel()
+
+    def apply_current_style(self, _checked: bool = False, automatic: bool = False) -> None:
+        layer = self.cb_layer.currentLayer()
+        if not self._is_polygon_layer(layer):
+            self.lbl_apply_status.setText("Select a polygon layer")
+            return
+        if layer.id() not in self._original_renderers and layer.renderer():
+            self._original_renderers[layer.id()] = layer.renderer().clone()
+            self.btn_restore.setEnabled(True)
+
+        self.btn_apply.setEnabled(False)
+        self.lbl_apply_status.setText("Applying...")
+        try:
+            if not apply_25d_style(layer, self.get_current_config()):
+                raise RuntimeError("The renderer rejected the selected layer or configuration.")
+            layer.emitStyleChanged()
+            layer.triggerRepaint()
+            if self.iface and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+            self.lbl_apply_status.setText("Preview applied" if automatic else "Style applied")
+            self._save_settings()
+        except Exception as exc:
+            self.lbl_apply_status.setText("Apply failed")
+            if not automatic:
+                QMessageBox.critical(self, "2.5D Styling", str(exc))
+            elif self.iface and hasattr(self.iface, "messageBar"):
+                self.iface.messageBar().pushWarning("2.5D Styling", str(exc))
+        finally:
+            self.btn_apply.setEnabled(True)
+
+    def restore_previous_style(self) -> None:
+        layer = self.cb_layer.currentLayer()
+        renderer = self._original_renderers.pop(layer.id(), None) if self._is_polygon_layer(layer) else None
+        if renderer is None:
+            return
+        layer.setRenderer(renderer)
+        layer.emitStyleChanged()
+        layer.triggerRepaint()
+        if self.iface and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
+        self.btn_restore.setEnabled(False)
+        self.lbl_apply_status.setText("Previous style restored")
+
+    def apply_selected_preset(self) -> None:
+        key = self.cb_preset.currentData()
+        if key not in PRESETS:
+            return
+        current = self.get_current_config()
+        current.update(PRESETS[key])
+        current["height_field"] = self.cb_height_field.currentField()
+        current["height_multiplier"] = self.sp_multiplier.value()
+        current["default_height"] = self.sp_default_height.value()
+        self.load_config_into_ui(current)
+        self.apply_current_style()
+        self.lbl_apply_status.setText(f"Preset applied: {PRESETS[key]['name']}")
+
+    def import_qml(self) -> None:
+        layer = self.cb_layer.currentLayer()
+        if not self._is_polygon_layer(layer):
+            return
+        start = self._settings.value(f"{self.SETTINGS_GROUP}/lastDirectory", "", type=str)
+        path, _filter = QFileDialog.getOpenFileName(self, "Import 2.5D QML Style", start, "QGIS Layer Style (*.qml)")
+        if not path:
+            return
+        if layer.id() not in self._original_renderers and layer.renderer():
+            self._original_renderers[layer.id()] = layer.renderer().clone()
+        if load_layer_qml(layer, path):
+            self._settings.setValue(f"{self.SETTINGS_GROUP}/lastDirectory", os.path.dirname(path))
+            self.btn_restore.setEnabled(True)
+            self.lbl_apply_status.setText("QML style imported")
+        else:
+            QMessageBox.critical(self, "Import QML", "The selected QML style could not be loaded.")
+
+    def export_qml(self) -> None:
+        layer = self.cb_layer.currentLayer()
+        if not self._is_polygon_layer(layer):
+            return
+        start = self._settings.value(f"{self.SETTINGS_GROUP}/lastDirectory", "", type=str)
+        default_path = os.path.join(start, "style_25d.qml") if start else "style_25d.qml"
+        path, _filter = QFileDialog.getSaveFileName(self, "Export 2.5D QML Style", default_path, "QGIS Layer Style (*.qml)")
+        if not path:
+            return
+        if not path.lower().endswith(".qml"):
+            path += ".qml"
+        if export_layer_qml(layer, path):
+            self._settings.setValue(f"{self.SETTINGS_GROUP}/lastDirectory", os.path.dirname(path))
+            self.lbl_apply_status.setText("QML style exported")
+        else:
+            QMessageBox.critical(self, "Export QML", "The QML style could not be saved.")
+
+    def _save_settings(self, *_args) -> None:
+        if self._updating_controls:
+            return
+        config_json = json.dumps(self.get_current_config())
+        self._settings.setValue(f"{self.SETTINGS_GROUP}/config", config_json)
+        self._settings.setValue(f"{self.SETTINGS_GROUP}/autoApply", self.chk_auto_apply.isChecked())
+        self._settings.setValue(f"{self.SETTINGS_GROUP}/tab", self.tabs.currentIndex())
+
+    def _restore_settings(self) -> None:
+        raw = self._settings.value(f"{self.SETTINGS_GROUP}/config", "", type=str)
+        if raw:
+            try:
+                self.load_config_into_ui(json.loads(raw))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                self.load_config_into_ui({})
+        else:
+            self.load_config_into_ui({})
+        self.chk_auto_apply.setChecked(self._settings.value(f"{self.SETTINGS_GROUP}/autoApply", True, type=bool))
+        self.tabs.setCurrentIndex(self._settings.value(f"{self.SETTINGS_GROUP}/tab", 0, type=int))

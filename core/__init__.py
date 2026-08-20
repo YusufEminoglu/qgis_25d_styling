@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Core computation, acquisition and styling modules for QGIS 2.5D Styling."""
+"""Core computation and styling modules for QGIS 2.5D Styling."""
+from .config import DEFAULT_CONFIG, choose_height_field, compass_direction, normalize_config
 from .osm_downloader import (
     OsmDownloadError,
     build_overpass_building_query,
@@ -20,6 +21,10 @@ from .twopointfive_engine import (
 )
 
 __all__ = [
+    "DEFAULT_CONFIG",
+    "choose_height_field",
+    "compass_direction",
+    "normalize_config",
     "OsmDownloadError",
     "build_overpass_building_query",
     "fetch_overpass_json",

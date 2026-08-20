@@ -8,15 +8,13 @@ from qgis.core import QgsProcessingProvider
 from qgis.PyQt.QtGui import QIcon
 
 from .alg_apply_25d_style import Apply25DStyleAlgorithm
-from .alg_download_osm_25d import DownloadOsm25DAlgorithm
 
 
 class Qgis25DStylingProvider(QgsProcessingProvider):
-    """Processing provider exposing 2.5D building styling and OSM 3D download algorithms."""
+    """Processing provider exposing the dedicated 2.5D styling algorithm."""
 
     def loadAlgorithms(self):
         self.addAlgorithm(Apply25DStyleAlgorithm())
-        self.addAlgorithm(DownloadOsm25DAlgorithm())
 
     def id(self):
         return "qgis_25d_styling"
