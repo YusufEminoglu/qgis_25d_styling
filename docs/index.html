@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QGIS 2.5D Styling — Publication-Ready 2.5D Building Symbology</title>
+  <meta name="description" content="A focused QGIS studio for turning polygon layers or bounded OSM building footprints into clear, beautiful 2.5D maps. Three renderers, 10 themes, 23 palettes, QML workflows." />
+  <meta property="og:title" content="QGIS 2.5D Styling Plugin" />
+  <meta property="og:description" content="Produce publication-ready 2.5D building symbology in QGIS. OSM footprints, per-floor color bands, 10 themes, QML import/export." />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --teal: #2ec4b6;
+      --teal-dark: #1a9e93;
+      --peach: #f4a261;
+      --peach-dark: #e07c3a;
+      --navy: #0a1628;
+      --navy-mid: #0f2240;
+      --navy-light: #1b3a5c;
+      --slate: #1e293b;
+      --slate-mid: #334155;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: rgba(46,196,182,0.15);
+      --card-bg: rgba(15,34,64,0.7);
+      --radius-sm: 8px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --shadow-teal: 0 0 40px rgba(46,196,182,0.15);
+      --shadow-card: 0 4px 32px rgba(0,0,0,0.4);
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--navy);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: var(--teal); text-decoration: none; }
+    a:hover { color: var(--peach); }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(46,196,182,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(46,196,182,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10,22,40,0.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1280px; margin: 0 auto; padding: 0 2rem;
+      height: 64px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 0.75rem; font-weight: 700; font-size: 1.1rem; color: var(--text-primary); }
+    .logo-badge {
+      background: linear-gradient(135deg, var(--teal), var(--peach));
+      color: var(--navy); font-weight: 800; font-size: 0.7rem;
+      padding: 3px 8px; border-radius: 4px; letter-spacing: 0.05em;
+    }
+    .nav-links { display: flex; gap: 2rem; list-style: none; }
+    .nav-links a { color: var(--text-secondary); font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--teal); }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--teal), var(--teal-dark)) !important;
+      color: var(--navy) !important; font-weight: 700 !important;
+      padding: 0.45rem 1.25rem; border-radius: 6px;
+    }
+
+    /* HERO */
+    .hero {
+      position: relative; min-height: 100vh;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 8rem 2rem 4rem; overflow: hidden;
+    }
+    .hero-bg { position: absolute; inset: 0; z-index: 0; }
+    .hero-bg img { width: 100%; height: 100%; object-fit: cover; opacity: 0.35; }
+    .hero-bg::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(10,22,40,0.3) 0%, rgba(10,22,40,0.5) 50%, rgba(10,22,40,1) 100%);
+    }
+    .hero-content { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; width: 100%; }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(46,196,182,0.1); border: 1px solid rgba(46,196,182,0.3);
+      color: var(--teal); font-size: 0.8rem; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 0.4rem 1rem; border-radius: 100px; margin-bottom: 1.5rem;
+    }
+    .hero-title {
+      font-size: clamp(2.8rem, 6vw, 5.5rem); font-weight: 900;
+      line-height: 1.05; letter-spacing: -0.03em; margin-bottom: 1.5rem;
+    }
+    .gradient-text {
+      background: linear-gradient(135deg, var(--teal) 0%, var(--peach) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero-subtitle {
+      font-size: clamp(1rem, 2vw, 1.3rem); color: var(--text-secondary);
+      max-width: 620px; margin-bottom: 2.5rem; line-height: 1.7;
+    }
+    .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 4rem; }
+
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+      color: var(--navy); font-weight: 700; font-size: 1rem;
+      padding: 0.9rem 2rem; border-radius: var(--radius-sm);
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(46,196,182,0.3);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(46,196,182,0.45); color: var(--navy); }
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(255,255,255,0.06); color: var(--text-primary);
+      font-weight: 600; font-size: 1rem; padding: 0.9rem 2rem;
+      border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.1);
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: var(--text-primary); }
+
+    .hero-stats { display: flex; gap: 3rem; flex-wrap: wrap; }
+    .hero-stat .value {
+      font-size: 2.5rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--teal), var(--peach));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;
+    }
+    .hero-stat .label { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; font-weight: 500; }
+
+    /* SECTIONS */
+    section { position: relative; z-index: 1; padding: 6rem 2rem; }
+    .container { max-width: 1280px; margin: 0 auto; }
+    .section-eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      color: var(--teal); font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 1rem;
+    }
+    .section-eyebrow::before { content: ''; width: 24px; height: 2px; background: var(--teal); display: inline-block; }
+    .section-title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 1rem; }
+    .section-subtitle { font-size: 1.1rem; color: var(--text-secondary); max-width: 600px; line-height: 1.7; }
+    .section-header { margin-bottom: 3.5rem; }
+    .bg-alt { background: var(--navy-mid); }
+
+    /* BADGES */
+    .badges {
+      background: var(--navy-mid); border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border); padding: 1.5rem 2rem;
+      position: relative; z-index: 1;
+    }
+    .badges-inner { max-width: 1280px; margin: 0 auto; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      background: rgba(46,196,182,0.08); border: 1px solid rgba(46,196,182,0.2);
+      color: var(--teal); font-size: 0.8rem; font-weight: 600;
+      padding: 0.35rem 0.85rem; border-radius: 100px; white-space: nowrap;
+    }
+
+    /* FEATURE GRID */
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
+    .feature-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 2rem; backdrop-filter: blur(8px);
+      transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+    }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-teal); border-color: rgba(46,196,182,0.35); }
+    .feature-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin-bottom: 1.25rem; }
+    .feature-icon.teal { background: rgba(46,196,182,0.15); }
+    .feature-icon.peach { background: rgba(244,162,97,0.15); }
+    .feature-icon.blue { background: rgba(96,165,250,0.15); }
+    .feature-icon.purple { background: rgba(167,139,250,0.15); }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.6rem; }
+    .feature-card p { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.65; }
+
+    /* IMAGE */
+    .image-full { border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-card); border: 1px solid var(--border); }
+    .image-full img { width: 100%; transition: transform 0.4s ease; }
+    .image-full:hover img { transform: scale(1.01); }
+    .image-caption {
+      background: rgba(15,34,64,0.95); padding: 1rem 1.5rem;
+      font-size: 0.85rem; color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .image-caption::before { content: '&#8593;'; color: var(--teal); font-weight: 700; }
+
+    /* SPLIT */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
+    .split.reverse { direction: rtl; }
+    .split.reverse > * { direction: ltr; }
+
+    /* RENDERER CARDS */
+    .renderers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+    .renderer-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 2rem;
+      position: relative; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s;
+    }
+    .renderer-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-teal); }
+    .renderer-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .renderer-card.geo::before { background: linear-gradient(90deg, var(--teal), #60a5fa); }
+    .renderer-card.floor::before { background: linear-gradient(90deg, var(--peach), #f472b6); }
+    .renderer-card.native::before { background: linear-gradient(90deg, #a78bfa, var(--teal)); }
+    .renderer-num { font-size: 2.5rem; font-weight: 900; color: rgba(46,196,182,0.15); font-family: var(--font-mono); margin-bottom: 0.5rem; }
+    .renderer-card h3 { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .renderer-card p { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; }
+    .renderer-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+    .rtag {
+      background: rgba(46,196,182,0.1); border: 1px solid rgba(46,196,182,0.2);
+      color: var(--teal); font-size: 0.72rem; font-weight: 600;
+      padding: 0.2rem 0.6rem; border-radius: 4px; font-family: var(--font-mono);
+    }
+
+    /* THEMES */
+    .themes-strip { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 2rem; }
+    .theme-chip {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.6rem 1rem;
+      font-size: 0.85rem; font-weight: 600; color: var(--text-primary);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .theme-chip:hover { border-color: rgba(46,196,182,0.4); background: rgba(46,196,182,0.07); }
+    .theme-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+    /* WORKFLOW */
+    .workflow-steps { display: flex; flex-direction: column; gap: 1.25rem; }
+    .workflow-step {
+      display: flex; align-items: flex-start; gap: 1.25rem;
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 1.5rem;
+      transition: border-color 0.25s;
+    }
+    .workflow-step:hover { border-color: rgba(46,196,182,0.35); }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+      color: var(--navy); font-weight: 800; font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      font-family: var(--font-mono);
+    }
+    .step-content h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .step-content p { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; }
+
+    /* CODE */
+    .code-block {
+      background: rgba(0,0,0,0.5); border: 1px solid rgba(46,196,182,0.2);
+      border-radius: var(--radius-md); padding: 1.75rem;
+      font-family: var(--font-mono); font-size: 0.875rem;
+      overflow-x: auto; position: relative;
+    }
+    .lang-tag {
+      position: absolute; top: 0.75rem; right: 0.75rem;
+      background: rgba(46,196,182,0.15); color: var(--teal);
+      font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.6rem;
+      border-radius: 4px; letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .code-line { line-height: 1.8; }
+    .code-comment { color: #4e6b8a; }
+    .code-key { color: var(--teal); }
+    .code-val { color: var(--peach); }
+    .code-str { color: #86efac; }
+    .code-kw { color: #c084fc; }
+    .mono { font-family: var(--font-mono); font-size: 0.82rem; color: var(--teal); }
+
+    /* PROCESSING */
+    .processing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+    .param-list { list-style: none; }
+    .param-list li { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid rgba(46,196,182,0.08); font-size: 0.875rem; }
+    .param-list li:last-child { border-bottom: none; }
+    .param-name { font-family: var(--font-mono); color: var(--teal); font-size: 0.8rem; font-weight: 600; min-width: 140px; padding-top: 2px; }
+    .param-desc { color: var(--text-secondary); line-height: 1.5; }
+
+    /* COMPAT */
+    .compat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; }
+    .compat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; text-align: center; }
+    .compat-icon { font-size: 2rem; margin-bottom: 0.75rem; }
+    .compat-title { font-weight: 700; margin-bottom: 0.35rem; font-size: 0.95rem; }
+    .compat-desc { font-size: 0.82rem; color: var(--text-secondary); }
+    .compat-check { display: inline-block; background: rgba(46,196,182,0.15); color: var(--teal); font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 100px; margin-top: 0.5rem; }
+
+    /* CHANGELOG */
+    .changelog-wrapper { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 2.5rem; backdrop-filter: blur(8px); }
+    .changelog-version { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    .version-badge { background: linear-gradient(135deg, var(--teal), var(--teal-dark)); color: var(--navy); font-family: var(--font-mono); font-weight: 800; font-size: 1rem; padding: 0.4rem 1rem; border-radius: 6px; }
+    .version-date { color: var(--text-muted); font-size: 0.875rem; font-family: var(--font-mono); }
+    .changelog-entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+    .changelog-entry { display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.875rem; color: var(--text-secondary); line-height: 1.5; }
+    .changelog-entry::before { content: '\2736'; color: var(--teal); font-size: 0.6rem; margin-top: 4px; flex-shrink: 0; }
+
+    /* INSTALL */
+    .install-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .install-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; transition: transform 0.25s, border-color 0.25s; }
+    .install-card:hover { transform: translateY(-4px); border-color: rgba(46,196,182,0.35); }
+    .install-num { font-family: var(--font-mono); font-size: 2.5rem; font-weight: 900; color: rgba(46,196,182,0.12); line-height: 1; margin-bottom: 0.5rem; }
+    .install-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .install-card p { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.65; }
+    .plugin-id { margin-top: 0.75rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(46,196,182,0.15); border-radius: 6px; padding: 0.5rem 0.75rem; font-family: var(--font-mono); font-size: 0.78rem; color: var(--teal); }
+
+    /* FOOTER */
+    footer { background: var(--navy-mid); border-top: 1px solid var(--border); padding: 3rem 2rem; position: relative; z-index: 1; }
+    .footer-inner { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 3rem; }
+    .footer-brand h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .footer-brand p { font-size: 0.875rem; color: var(--text-muted); line-height: 1.65; }
+    .footer-col h4 { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1rem; }
+    .footer-links { list-style: none; }
+    .footer-links li { margin-bottom: 0.5rem; }
+    .footer-links a { color: var(--text-secondary); font-size: 0.875rem; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--teal); }
+    .footer-bottom { max-width: 1280px; margin: 2rem auto 0; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+    .footer-bottom p { font-size: 0.82rem; color: var(--text-muted); }
+    .license { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(46,196,182,0.08); border: 1px solid rgba(46,196,182,0.2); color: var(--teal); font-size: 0.78rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 100px; }
+
+    /* DIVIDER */
+    .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--teal), transparent); opacity: 0.3; margin: 0 2rem; }
+
+    /* GLOW */
+    .glow-teal { position: absolute; width: 600px; height: 600px; border-radius: 50%; background: radial-gradient(circle, rgba(46,196,182,0.07) 0%, transparent 70%); pointer-events: none; }
+
+    /* ANIMATIONS */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    .hero-content > * { animation: fadeUp 0.7s ease both; }
+    .hero-content > *:nth-child(1) { animation-delay: 0.1s; }
+    .hero-content > *:nth-child(2) { animation-delay: 0.2s; }
+    .hero-content > *:nth-child(3) { animation-delay: 0.3s; }
+    .hero-content > *:nth-child(4) { animation-delay: 0.4s; }
+    .hero-content > *:nth-child(5) { animation-delay: 0.5s; }
+
+    /* RESPONSIVE */
+    @media (max-width: 900px) {
+      .split { grid-template-columns: 1fr; gap: 2rem; }
+      .split.reverse { direction: ltr; }
+      .renderers { grid-template-columns: 1fr; }
+      .processing-grid { grid-template-columns: 1fr; }
+      .footer-inner { grid-template-columns: 1fr; gap: 2rem; }
+    }
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      section { padding: 4rem 1.25rem; }
+      .hero { padding: 6rem 1.25rem 3rem; }
+    }
+
+    /* PALETTE PREVIEW */
+    .palette-swatch { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .swatch { flex: 1; height: 8px; border-radius: 100px; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <div class="nav-logo">
+      <span>QGIS 2.5D Styling</span>
+      <span class="logo-badge">v1.0.0</span>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#renderers">Renderers</a></li>
+      <li><a href="#themes">Themes</a></li>
+      <li><a href="#workflow">Workflow</a></li>
+      <li><a href="#processing">Processing</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/YusufEminoglu/qgis_25d_styling" class="nav-cta">GitHub &#x2197;</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="hero-bg">
+    <img src="assets/hero_city_25d.jpg" alt="2.5D city visualization" onerror="this.style.display='none'" />
+  </div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">QGIS Plugin &middot; Urban Visualization</div>
+    <h1 class="hero-title">
+      Publication-Ready<br />
+      <span class="gradient-text">2.5D Building Styling</span><br />
+      for QGIS
+    </h1>
+    <p class="hero-subtitle">
+      Turn any polygon layer or bounded OSM building footprints into stunning
+      2.5D maps &mdash; three renderers, 10 curated material themes, 23 per-floor
+      palettes, and full QML import/export. No pip dependencies.
+    </p>
+    <div class="hero-actions">
+      <a href="https://plugins.qgis.org/plugins/qgis_25d_styling/" class="btn-primary">&#8659; Install from Plugin Hub</a>
+      <a href="https://github.com/YusufEminoglu/qgis_25d_styling" class="btn-secondary">&#9733; View on GitHub</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="value">3</div><div class="label">Renderers</div></div>
+      <div class="hero-stat"><div class="value">10</div><div class="label">Material Themes</div></div>
+      <div class="hero-stat"><div class="value">23</div><div class="label">Color Palettes</div></div>
+      <div class="hero-stat"><div class="value">0</div><div class="label">pip dependencies</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- BADGES -->
+<div class="badges">
+  <div class="badges-inner">
+    <span class="badge">&#10004; QGIS 3.28+</span>
+    <span class="badge">&#10004; QGIS 4.x</span>
+    <span class="badge" style="background:rgba(244,162,97,0.08);border-color:rgba(244,162,97,0.2);color:#f4a261;">&#10004; OSM Integration</span>
+    <span class="badge">&#10004; Processing Algorithm</span>
+    <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#10004; QML Export</span>
+    <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#10004; GPL-2.0-or-later</span>
+    <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#128100; Yusuf Emino&#287;lu</span>
+  </div>
+</div>
+
+<!-- HERO FULL IMAGE -->
+<div style="padding:0 2rem;position:relative;z-index:1;">
+  <div style="max-width:1280px;margin:2rem auto;">
+    <div class="image-full">
+      <img src="assets/hero_city_25d.jpg" alt="Dense urban 2.5D building visualization with teal-to-peach floor gradients" style="width:100%;max-height:560px;object-fit:cover;" onerror="this.parentElement.parentElement.style.display='none'" />
+      <div class="image-caption">Dense urban cityscape rendered with the Geometry Generator renderer &mdash; teal-to-peach per-floor gradient palette, directional shading, and soft drop shadows</div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="glow-teal" style="top:-200px;right:-200px;"></div>
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Features</div>
+      <h2 class="section-title">Everything you need for<br />2.5D building maps</h2>
+      <p class="section-subtitle">A single focused tool that does one thing exceptionally well: transforming flat building polygons into rich, layered 2.5D visualizations.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon teal">&#127961;</div>
+        <h3>OSM Building Acquisition</h3>
+        <p>Asynchronously download bounded OSM building footprints directly for the current map view. Automatic metric CRS, local cache, mirror fallback, and <span class="mono">building:levels</span> floor-count extraction.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon peach">&#127912;</div>
+        <h3>Three Distinct Renderers</h3>
+        <p>Geometry Generator with full facade/roof/shadow control, Per-Floor Color Bands with 23 palettes and a live swatch preview, and Native QGIS 2.5D using layer-scoped expression variables.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon blue">&#127963;</div>
+        <h3>10 Material Themes</h3>
+        <p>Curated themes adapted from the proven 02CartoLab 2.5D style collection. Midnight Blue, Terracotta, Forest Green, Pearl White, and six more &mdash; each ships its own matching floor gradient.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon purple">&#9728;</div>
+        <h3>Directional Solar Shading</h3>
+        <p>Control sun azimuth from 0&deg; to 359&deg; with six named shortcuts. Dynamic compass labels, configurable shading depth and shadow opacity for dramatic lighting effects.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon teal">&#128208;</div>
+        <h3>building:levels Intelligence</h3>
+        <p>OSM <span class="mono">building:levels</span> drives floor counts. Explicit <span class="mono">height</span> tags estimate floors automatically. Missing values fall back to a visible, user-configurable 3-floor default.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon peach">&#128190;</div>
+        <h3>QML Import &amp; Export</h3>
+        <p>Export any applied renderer as a QML style file for reuse. Import community or previous QML styles. Non-destructive restore returns the original renderer at any time.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon blue">&#9889;</div>
+        <h3>Debounced Live Preview</h3>
+        <p>Slider edits trigger debounced preview refresh &mdash; no stuttering on every step. Adaptive delay for large layers automatically guards performance.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon purple">&#128300;</div>
+        <h3>Headless Processing Algorithm</h3>
+        <p><span class="mono">apply_25d_style</span> runs the full renderer stack without the dock &mdash; ideal for batch workflows, QGIS Model Builder, and CI pipelines.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon teal">&#128737;</div>
+        <h3>Smart Preflight Checks</h3>
+        <p>Filters non-polygon layers, detects height fields case-insensitively, warns on geographic CRS, and reports feature count and height source in the dock status bar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- RENDERERS -->
+<section id="renderers" class="bg-alt">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Rendering Engines</div>
+      <h2 class="section-title">Three renderers, one result</h2>
+      <p class="section-subtitle">Pick the approach that best matches your workflow &mdash; from expressive geometry generation to production-grade native QGIS rendering.</p>
+    </div>
+    <div class="renderers">
+      <div class="renderer-card geo">
+        <div class="renderer-num">01</div>
+        <h3>Geometry Generator</h3>
+        <p>Builds facades, roofs, optional drop shadows, and floor division lines entirely through QGIS geometry expressions. Feature draw ordering ensures taller buildings paint above shorter neighbors.</p>
+        <div class="renderer-tags">
+          <span class="rtag">facade control</span><span class="rtag">shadow</span><span class="rtag">floor lines</span><span class="rtag">draw order</span>
+        </div>
+      </div>
+      <div class="renderer-card floor">
+        <div class="renderer-num">02</div>
+        <h3>Per-Floor Color Bands</h3>
+        <p>A rule-based renderer that assigns a distinct color to each floor level. Live ten-floor swatch preview, 23 curated palettes, automatic or explicit floor limit, and the default renderer for OSM downloads.</p>
+        <div class="renderer-tags">
+          <span class="rtag">23 palettes</span><span class="rtag">live swatch</span><span class="rtag">rule-based</span><span class="rtag">OSM default</span>
+        </div>
+      </div>
+      <div class="renderer-card native">
+        <div class="renderer-num">03</div>
+        <h3>Native QGIS 2.5D</h3>
+        <p>Delegates to QGIS's built-in <span class="mono">Qgs25DRenderer</span> via layer-scoped expression variables. Integrates with QGIS 3D views and respects global rendering settings.</p>
+        <div class="renderer-tags">
+          <span class="rtag">Qgs25DRenderer</span><span class="rtag">layer variables</span><span class="rtag">3D ready</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- THEMES -->
+<section id="themes">
+  <div class="container">
+    <div class="split">
+      <div>
+        <div class="section-eyebrow">Material Themes</div>
+        <h2 class="section-title">10 handcrafted<br />visual identities</h2>
+        <p class="section-subtitle">Every theme ships a matched set of facade color, roof accent, shading depth, shadow opacity, projection angle &mdash; and its own per-floor gradient derived from that theme&rsquo;s own palette.</p>
+        <div class="themes-strip">
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#2ec4b6,#f4a261)"></span>Teal &amp; Yavru A&#287;z&#305;</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#0d1b4b,#c0c8d4)"></span>Midnight Blue</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#b05f3c,#d4a04a)"></span>Terracotta</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#1f4f2e,#7ec850)"></span>Forest Green</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#f0ede8,#c9a98a)"></span>Pearl White</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#1a1a2e,#f7c59f)"></span>Carbon &amp; Gold</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#7b2d8b,#e040fb)"></span>Neon Violet</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#c0392b,#f39c12)"></span>Sunset Fire</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#b0bec5,#546e7a)"></span>Industrial Grey</span>
+          <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#004d61,#00bcd4)"></span>Deep Ocean</span>
+        </div>
+      </div>
+      <div class="image-full">
+        <img src="assets/themes_showcase.jpg" alt="Four theme variants: Midnight Blue, Terracotta, Forest Green, Pearl White" onerror="this.parentElement.style.display='none'" />
+        <div class="image-caption">Four of the 10 built-in themes &mdash; each a fully coordinated facade, roof, shading, and floor-gradient identity</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FLOOR PALETTES -->
+<section class="bg-alt">
+  <div class="container">
+    <div class="split reverse">
+      <div>
+        <div class="section-eyebrow">Per-Floor Color Palettes</div>
+        <h2 class="section-title">23 palettes,<br />infinite expression</h2>
+        <p class="section-subtitle">10 theme-derived gradients plus 13 standalone curated palettes. A live ten-floor swatch preview lets you compare options before committing.</p>
+        <div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:0.6rem;">
+          <div style="display:flex;align-items:center;gap:0.75rem;font-size:0.875rem;color:var(--text-secondary);">
+            <span style="width:80px;height:12px;border-radius:100px;background:linear-gradient(90deg,#2ec4b6,#f4a261);display:inline-block;flex-shrink:0;"></span>Teal to Yavru A&#287;z&#305; <em style="margin-left:0.25rem;color:var(--teal);font-size:0.75rem;">default</em>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;font-size:0.875rem;color:var(--text-secondary);">
+            <span style="width:80px;height:12px;border-radius:100px;background:linear-gradient(90deg,#0d1b4b,#ffd700);display:inline-block;flex-shrink:0;"></span>Midnight to Gold
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;font-size:0.875rem;color:var(--text-secondary);">
+            <span style="width:80px;height:12px;border-radius:100px;background:linear-gradient(90deg,#1f4f2e,#a8e063);display:inline-block;flex-shrink:0;"></span>Forest to Lime
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;font-size:0.875rem;color:var(--text-secondary);">
+            <span style="width:80px;height:12px;border-radius:100px;background:linear-gradient(90deg,#c0392b,#e74c3c);display:inline-block;flex-shrink:0;"></span>Rose to Crimson
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;font-size:0.875rem;color:var(--text-secondary);">
+            <span style="width:80px;height:12px;border-radius:100px;background:linear-gradient(90deg,#006994,#00d4ff);display:inline-block;flex-shrink:0;"></span>Arctic to Azure
+          </div>
+          <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-muted);">+ 18 more palettes included</div>
+        </div>
+      </div>
+      <div class="image-full">
+        <img src="assets/floor_palette_showcase.jpg" alt="Per-floor color gradient showcase across a multi-storey building cross section" onerror="this.parentElement.style.display='none'" />
+        <div class="image-caption">Building cross-section showing floors in distinct gradient bands &mdash; one of 23 palette options</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- WORKFLOW -->
+<section id="workflow">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Five-Step Workflow</div>
+      <h2 class="section-title">From data to<br />publication in minutes</h2>
+      <p class="section-subtitle">The compact right-side dock guides you through every step. Each stage is clearly separated &mdash; OSM, Form, Light, Floors, Themes.</p>
+    </div>
+    <div class="workflow-steps">
+      <div class="workflow-step">
+        <div class="step-num">01</div>
+        <div class="step-content">
+          <h4>Select a layer or download OSM buildings</h4>
+          <p>Pick any polygon layer from your project, or click &ldquo;Download Buildings&rdquo; to fetch OSM footprints for the current map view. <span class="mono">building:levels</span> and <span class="mono">height</span> tags are extracted automatically.</p>
+        </div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">02</div>
+        <div class="step-content">
+          <h4>Choose a renderer</h4>
+          <p>Geometry Generator for full control, Per-Floor Color Bands for floor-level gradients, or Native QGIS 2.5D for integration with QGIS&rsquo;s own 3D rendering pipeline.</p>
+        </div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">03</div>
+        <div class="step-content">
+          <h4>Configure projection, materials &amp; lighting</h4>
+          <p>Set the projection angle (0&ndash;359&deg;, six shortcuts), facade and roof colors, outline width, shading depth, shadow opacity, and story height. Debounced live preview updates instantly.</p>
+        </div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">04</div>
+        <div class="step-content">
+          <h4>Apply a theme or tune per-floor palettes</h4>
+          <p>Select one of 10 material themes &mdash; the dock updates all controls and automatically switches the Floor Palette to that theme&rsquo;s matching gradient. Or pick any of the 23 standalone palettes.</p>
+        </div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">05</div>
+        <div class="step-content">
+          <h4>Apply, export QML, or restore</h4>
+          <p>Click Apply to commit the renderer. Export a QML style file for reuse. Restore returns the original renderer non-destructively at any time. Settings persist across sessions.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:3rem;">
+      <div class="image-full">
+        <img src="assets/osm_workflow.jpg" alt="OSM data pipeline to 2.5D building visualization" style="max-height:500px;object-fit:cover;width:100%;" onerror="this.parentElement.parentElement.style.display='none'" />
+        <div class="image-caption">The complete data pipeline: OSM footprints &#8594; floor-count analysis &#8594; 2.5D extrusion with teal-to-peach gradient</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PROCESSING -->
+<section id="processing" class="bg-alt">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Processing Algorithm</div>
+      <h2 class="section-title">Headless styling pipeline</h2>
+      <p class="section-subtitle">Use <span class="mono">qgis_25d_styling:apply_25d_style</span> in QGIS Model Builder, Python scripts, or CI/CD pipelines &mdash; no dock required.</p>
+    </div>
+    <div class="processing-grid">
+      <div class="code-block">
+        <span class="lang-tag">Python</span>
+        <div class="code-line"><span class="code-kw">import</span> processing</div>
+        <div class="code-line">&nbsp;</div>
+        <div class="code-line">result = processing.run(</div>
+        <div class="code-line">&nbsp;&nbsp;<span class="code-str">"qgis_25d_styling:apply_25d_style"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;{</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"INPUT"</span>: <span class="code-val">buildings_layer</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"RENDERER_MODE"</span>: <span class="code-str">"geometry_generator"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"THEME"</span>: <span class="code-str">"Midnight Blue"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"PROJECTION_ANGLE"</span>: <span class="code-val">315</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"FACADE_COLOR"</span>: <span class="code-str">"#2ec4b6"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"ROOF_COLOR"</span>: <span class="code-str">"#f4a261"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"FALLBACK_HEIGHT"</span>: <span class="code-val">3</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"OUTPUT"</span>: <span class="code-str">"memory:"</span>,</div>
+        <div class="code-line">&nbsp;&nbsp;}</div>
+        <div class="code-line">)</div>
+      </div>
+      <div>
+        <h3 style="margin-bottom:1rem;font-size:1rem;font-weight:700;color:var(--text-secondary);letter-spacing:0.05em;text-transform:uppercase;">Parameters</h3>
+        <ul class="param-list">
+          <li><span class="param-name">INPUT</span><span class="param-desc">Polygon layer to style &mdash; project layer or memory layer</span></li>
+          <li><span class="param-name">RENDERER_MODE</span><span class="param-desc">geometry_generator &middot; per_floor &middot; native_25d</span></li>
+          <li><span class="param-name">THEME</span><span class="param-desc">One of 10 named themes (overrides individual color params)</span></li>
+          <li><span class="param-name">PROJECTION_ANGLE</span><span class="param-desc">0&ndash;359 degrees (315 = NW standard isometric)</span></li>
+          <li><span class="param-name">FACADE_COLOR</span><span class="param-desc">Hex color for wall faces (default: soft teal)</span></li>
+          <li><span class="param-name">ROOF_COLOR</span><span class="param-desc">Hex color for roof face (default: yavru a&#287;z&#305; peach)</span></li>
+          <li><span class="param-name">FALLBACK_HEIGHT</span><span class="param-desc">Default floor count when building:levels is absent</span></li>
+          <li><span class="param-name">OUTPUT</span><span class="param-desc">Destination layer (memory:, file path, PostGIS)</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- COMPATIBILITY -->
+<section>
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Compatibility</div>
+      <h2 class="section-title">Tested on every runtime</h2>
+      <p class="section-subtitle">Release verification runs on both QGIS LTR and the current stable release. No external dependencies means zero install friction.</p>
+    </div>
+    <div class="compat-grid">
+      <div class="compat-card">
+        <div class="compat-icon">&#128994;</div>
+        <div class="compat-title">QGIS 3.28+</div>
+        <div class="compat-desc">Minimum requirement. Full feature support on all 3.x releases.</div>
+        <div><span class="compat-check">&#10004; Verified</span></div>
+      </div>
+      <div class="compat-card">
+        <div class="compat-icon">&#128309;</div>
+        <div class="compat-title">QGIS 3.44 LTR</div>
+        <div class="compat-desc">Primary release target. Every version is verified on LTR before publishing.</div>
+        <div><span class="compat-check">&#10004; Release Runtime</span></div>
+      </div>
+      <div class="compat-card">
+        <div class="compat-icon">&#9889;</div>
+        <div class="compat-title">QGIS 4.2</div>
+        <div class="compat-desc">Qt6/QGIS 4 verified. No deprecated API usage in the plugin codebase.</div>
+        <div><span class="compat-check">&#10004; Release Runtime</span></div>
+      </div>
+      <div class="compat-card">
+        <div class="compat-icon">&#128230;</div>
+        <div class="compat-title">Zero pip deps</div>
+        <div class="compat-desc">Pure QGIS API &mdash; qgis.core, qgis.gui, Processing. No external packages.</div>
+        <div><span class="compat-check">&#10004; No Install</span></div>
+      </div>
+      <div class="compat-card">
+        <div class="compat-icon">&#127758;</div>
+        <div class="compat-title">Network optional</div>
+        <div class="compat-desc">Used only when the user explicitly starts an OSM download. Fully offline otherwise.</div>
+        <div><span class="compat-check">&#10004; Offline Ready</span></div>
+      </div>
+      <div class="compat-card">
+        <div class="compat-icon">&#128187;</div>
+        <div class="compat-title">Win &middot; Linux &middot; macOS</div>
+        <div class="compat-desc">Platform-agnostic Python. Tested primarily on Windows (OSGeo4W).</div>
+        <div><span class="compat-check">&#10004; Cross-platform</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- INSTALL -->
+<section id="install" class="bg-alt">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Installation</div>
+      <h2 class="section-title">Up and running<br />in 30 seconds</h2>
+    </div>
+    <div class="install-grid">
+      <div class="install-card">
+        <div class="install-num">01</div>
+        <h3>Plugin Manager (Recommended)</h3>
+        <p>Open QGIS &rarr; <strong>Plugins &rarr; Manage and Install Plugins</strong> &rarr; Search for the plugin name &rarr; Install.</p>
+        <div class="plugin-id">qgis_25d_styling</div>
+      </div>
+      <div class="install-card">
+        <div class="install-num">02</div>
+        <h3>Install from ZIP</h3>
+        <p>Download the latest release ZIP from GitHub &rarr; <strong>Plugins &rarr; Manage and Install Plugins &rarr; Install from ZIP</strong> &rarr; select the file.</p>
+        <div class="plugin-id">qgis_25d_styling.zip</div>
+      </div>
+      <div class="install-card">
+        <div class="install-num">03</div>
+        <h3>Development Install</h3>
+        <p>Clone the repository to your QGIS plugin path and set <span class="mono">QGIS_PLUGINPATH</span> to the parent directory. Restart QGIS.</p>
+        <div class="plugin-id">QGIS_PLUGINPATH=.../qgis_plugins</div>
+      </div>
+    </div>
+    <div style="margin-top:2rem;text-align:center;">
+      <a href="https://plugins.qgis.org/plugins/qgis_25d_styling/" class="btn-primary" style="display:inline-flex;">&#8659; Open in QGIS Plugin Hub</a>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- CHANGELOG -->
+<section id="changelog">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-eyebrow">Changelog</div>
+      <h2 class="section-title">Release history</h2>
+    </div>
+    <div class="changelog-wrapper">
+      <div class="changelog-version">
+        <span class="version-badge">v1.0.0</span>
+        <span class="version-date">2026-08-21</span>
+        <span class="badge" style="font-size:0.72rem;padding:0.2rem 0.6rem;">Initial Release</span>
+      </div>
+      <div class="changelog-entries">
+        <div class="changelog-entry">Asynchronous OSM building download with local cache and mirror fallback</div>
+        <div class="changelog-entry"><span class="mono">building:levels</span> floor-count handling with auditable <span class="mono">levels_source</span> attribute</div>
+        <div class="changelog-entry">Compact right-side dock with OSM, Form, Light, Floors and Themes tabs</div>
+        <div class="changelog-entry">Three renderer modes: Geometry Generator, Per-Floor Bands, Native 2.5D</div>
+        <div class="changelog-entry">10 material themes from 02CartoLab &mdash; each with matched floor gradient</div>
+        <div class="changelog-entry">23 per-floor color palettes with live ten-floor swatch preview</div>
+        <div class="changelog-entry">Debounced live preview with adaptive delay for large layers</div>
+        <div class="changelog-entry">Non-destructive restore of pre-apply renderer</div>
+        <div class="changelog-entry">QML style import and export with last-directory persistence</div>
+        <div class="changelog-entry">Dynamic compass labels and six named projection shortcuts</div>
+        <div class="changelog-entry">Headless Processing algorithm with renderer and fallback-height params</div>
+        <div class="changelog-entry">Feature-count, CRS, height-source, and geographic-CRS diagnostics</div>
+        <div class="changelog-entry">Default soft teal facade + yavru a&#287;z&#305; roof accent across all surfaces</div>
+        <div class="changelog-entry">Theme switching auto-syncs Floor Palette to theme&rsquo;s own gradient</div>
+        <div class="changelog-entry">Height-tag estimation of floors with distinct <span class="mono">levels_source</span> status</div>
+        <div class="changelog-entry">512 px transparent plugin icon</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <h3>QGIS 2.5D Styling</h3>
+      <p>A focused QGIS plugin for publication-ready 2.5D building visualizations. Part of the PlanX urban analytics ecosystem for QGIS.</p>
+      <div style="margin-top:1rem;">
+        <a href="https://github.com/YusufEminoglu/qgis_25d_styling" class="btn-secondary" style="display:inline-flex;font-size:0.85rem;padding:0.5rem 1.25rem;">GitHub &#x2197;</a>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4>Resources</h4>
+      <ul class="footer-links">
+        <li><a href="https://plugins.qgis.org/plugins/qgis_25d_styling/">QGIS Plugin Hub</a></li>
+        <li><a href="https://github.com/YusufEminoglu/qgis_25d_styling/releases">Releases</a></li>
+        <li><a href="https://github.com/YusufEminoglu/qgis_25d_styling/blob/main/CHANGELOG.md">Changelog</a></li>
+        <li><a href="https://github.com/YusufEminoglu/qgis_25d_styling/issues">Bug Reports</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Ecosystem</h4>
+      <ul class="footer-links">
+        <li><a href="https://github.com/YusufEminoglu/PlanX">PlanX</a></li>
+        <li><a href="https://github.com/YusufEminoglu/zero2cartolab">02CartoLab</a></li>
+        <li><a href="https://github.com/YusufEminoglu/planx_geostats">PlanX GeoStats</a></li>
+        <li><a href="https://github.com/YusufEminoglu/planx_3d_city">PlanX 3D City</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Yusuf Emino&#287;lu &middot; Dokuz Eyl&uuml;l University</p>
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+      <span class="license">GPL-2.0-or-later</span>
+      <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;font-size:0.72rem;">QGIS 3.28 &ndash; 4.99</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
