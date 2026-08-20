@@ -199,3 +199,67 @@ STANDARD_ANGLES = [
     ("Western Oblique (225° SW)", 225.0),
     ("Northern Oblique (315° NW)", 315.0),
 ]
+
+FLOOR_BAND_PALETTES: Dict[str, Dict[str, Any]] = {
+    "civic_spectrum": {
+        "name": "Civic Spectrum",
+        "colors": (
+            "#f4d35e", "#ee964b", "#f95738", "#d7263d",
+            "#9b5de5", "#00bbf9", "#00f5d4", "#80ed99",
+            "#ffd166", "#06d6a0", "#118ab2", "#ef476f",
+            "#f4a261", "#2a9d8f", "#e76f51", "#457b9d",
+        ),
+    },
+    "planning_bands": {
+        "name": "Planning & Zoning Bands",
+        "colors": (
+            "#f2cc8f", "#e07a5f", "#81b29a", "#3d405b",
+            "#8ecae6", "#219ebc", "#ffb703", "#fb8500",
+            "#a7c957", "#6a994e", "#bc4749", "#9d4edd",
+            "#4cc9f0", "#4895ef", "#4361ee", "#3a0ca3",
+        ),
+    },
+    "soft_atlas": {
+        "name": "Soft Pastel Atlas",
+        "colors": (
+            "#b8e0d2", "#95b8d1", "#809bce", "#b8b8ff",
+            "#ffc8dd", "#ffafcc", "#ffd6a5", "#fdffb6",
+            "#caffbf", "#9bf6ff", "#a0c4ff", "#bdb2ff",
+            "#d8e2dc", "#ffe5d9", "#ffcad4", "#f4acb7",
+        ),
+    },
+    "turbo_height": {
+        "name": "Turbo Height Spectrum",
+        "colors": (
+            "#30123b", "#4662d8", "#35abf8", "#1ae4b6",
+            "#72fe5e", "#c8ef34", "#faba39", "#f66c19",
+            "#cb2a04", "#7a0403", "#5c015b", "#2a0845",
+            "#00b4d8", "#0077b6", "#023e8a", "#03045e",
+        ),
+    },
+    "viridis_height": {
+        "name": "Viridis Scientific",
+        "colors": (
+            "#440154", "#482878", "#3e4989", "#31688e",
+            "#26828e", "#1f9e89", "#35b779", "#6ece58",
+            "#b5de2b", "#fde725", "#80ed99", "#38b000",
+            "#007200", "#004b23", "#132a13", "#001a00",
+        ),
+    },
+    "sunset_twilight": {
+        "name": "Sunset Twilight",
+        "colors": (
+            "#fde047", "#f59e0b", "#f97316", "#ef4444",
+            "#e11d48", "#be185d", "#86198f", "#581c87",
+            "#3b0764", "#1e1b4b", "#0f172a", "#020617",
+        ),
+    },
+    "neon_cyber": {
+        "name": "Cyberpunk Neon Bands",
+        "colors": (
+            "#00f5d4", "#00bbf9", "#7b2cbf", "#ff007f",
+            "#fee440", "#f15bb5", "#9b5de5", "#00f0ff",
+            "#ff0055", "#39ff14", "#ff5400", "#7209b7",
+        ),
+    },
+}

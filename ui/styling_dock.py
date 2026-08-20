@@ -54,7 +54,7 @@ from ..core.osm_downloader import (
     fetch_overpass_json,
     osm_json_to_vector_layer,
 )
-from ..core.presets import PRESETS, STANDARD_ANGLES
+from ..core.presets import FLOOR_BAND_PALETTES, PRESETS, STANDARD_ANGLES
 from ..core.qml_exporter import export_layer_qml, load_layer_qml
 from ..core.twopointfive_engine import apply_25d_style
 from .color_button import ColorPickerButton
@@ -347,10 +347,9 @@ class StylingDockWidget(QDockWidget):
         fl_h.addRow("Height Scale:", self.sp_multiplier)
 
         self.cb_render_engine = QComboBox()
-        self.cb_render_engine.addItems([
-            "Geometry Generator (Multi-Layer & Shaded)",
-            "Native QGIS 2.5D Renderer",
-        ])
+        self.cb_render_engine.addItem("Geometry Generator (Multi-Layer & Shaded)", "geometry_generator")
+        self.cb_render_engine.addItem("Per-Floor Multi-Color Bands (Kat Kat Renkli)", "per_floor_bands")
+        self.cb_render_engine.addItem("Native QGIS 2.5D Renderer", "native")
         fl_h.addRow("Engine:", self.cb_render_engine)
         lyt.addWidget(gb_h)
 
@@ -532,6 +531,31 @@ class StylingDockWidget(QDockWidget):
         fl_floors.addRow("Floor Line Width:", self.sp_floor_line_w)
 
         lyt.addWidget(gb_floors)
+
+        # Per-Floor Multi-Color Bands (Kat Kat Renkli Cepheler)
+        gb_multicolor = QGroupBox("🌈 Per-Floor Multi-Color Palette (Kat Kat Renkli)")
+        fl_multi = QFormLayout(gb_multicolor)
+
+        self.chk_per_floor_colors = QCheckBox("Color Each Floor & Wall Differently")
+        self.chk_per_floor_colors.setChecked(False)
+        self.chk_per_floor_colors.setStyleSheet("font-weight: 700; color: #1e293b;")
+        fl_multi.addRow(self.chk_per_floor_colors)
+
+        self.cb_floor_palette = QComboBox()
+        for pkey, pdata in FLOOR_BAND_PALETTES.items():
+            self.cb_floor_palette.addItem(pdata.get("name", pkey), pkey)
+        fl_multi.addRow("Color Palette:", self.cb_floor_palette)
+
+        self.sp_max_floors = QSpinBox()
+        self.sp_max_floors.setRange(0, 60)
+        self.sp_max_floors.setValue(0)
+        self.sp_max_floors.setSpecialValueText("Auto (Layer Max)")
+        fl_multi.addRow("Max Floors:", self.sp_max_floors)
+
+        # Sync toggle with render engine
+        self.chk_per_floor_colors.toggled.connect(self._on_per_floor_toggled)
+
+        lyt.addWidget(gb_multicolor)
         lyt.addStretch()
         return scroll
 
@@ -588,6 +612,9 @@ class StylingDockWidget(QDockWidget):
             self.chk_floor_bands,
             self.sp_band_height,
             self.sp_floor_line_w,
+            self.chk_per_floor_colors,
+            self.cb_floor_palette,
+            self.sp_max_floors,
         ]
         for c in controls:
             if hasattr(c, "valueChanged"):
@@ -608,11 +635,22 @@ class StylingDockWidget(QDockWidget):
         for btn in color_btns:
             btn.colorChanged.connect(self._maybe_auto_apply)
 
+    def _on_per_floor_toggled(self, checked: bool) -> None:
+        if self._updating_controls:
+            return
+        if checked:
+            idx = self.cb_render_engine.findData("per_floor_bands")
+            if idx >= 0:
+                self.cb_render_engine.setCurrentIndex(idx)
+        else:
+            if self.cb_render_engine.currentData() == "per_floor_bands":
+                self.cb_render_engine.setCurrentIndex(0)
+
     def _on_layer_changed(self, layer: Optional[QgsMapLayer]) -> None:
         if isinstance(layer, QgsVectorLayer) and layer.isValid():
             self.cb_height_field.setLayer(layer)
             # Try to auto-select 'height' or 'building_levels'
-            for fname in ("height", "building_levels", "levels", "h"):
+            for fname in ("height", "building_levels", "levels", "kat", "floors", "h"):
                 idx = layer.fields().indexOf(fname)
                 if idx >= 0:
                     self.cb_height_field.setField(fname)
@@ -626,10 +664,24 @@ class StylingDockWidget(QDockWidget):
 
     def get_current_config(self) -> Dict[str, Any]:
         """Harvest current GUI parameters into a configuration dictionary."""
+        engine_data = self.cb_render_engine.currentData()
+        if self.chk_per_floor_colors.isChecked() or engine_data == "per_floor_bands":
+            render_mode = "per_floor_bands"
+        elif engine_data == "native":
+            render_mode = "native"
+        else:
+            render_mode = "geometry_generator"
+
+        palette_data = self.cb_floor_palette.currentData() or "civic_spectrum"
+
         return {
             "height_field": self.cb_height_field.currentField() or "height",
             "height_multiplier": self.sp_multiplier.value(),
-            "use_geometry_generator": (self.cb_render_engine.currentIndex() == 0),
+            "render_mode": render_mode,
+            "use_geometry_generator": (render_mode == "geometry_generator"),
+            "per_floor_bands": (render_mode == "per_floor_bands"),
+            "floor_palette": palette_data,
+            "max_floors": self.sp_max_floors.value(),
             "projection_angle": float(self.sp_angle.value()),
             "wall_color": self.btn_wall_color.color().name(),
             "roof_color": self.btn_roof_color.color().name(),

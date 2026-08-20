@@ -22,6 +22,8 @@ try:
         QgsSingleSymbolRenderer,
         QgsSymbol,
         QgsSymbolLayer,
+        QgsRuleBasedRenderer,
+        QgsFeatureRequest,
         QgsUnitTypes,
         QgsVectorLayer,
     )
@@ -40,6 +42,8 @@ except ImportError:
     QgsSimpleFillSymbolLayer = None
     QgsSimpleLineSymbolLayer = None
     QgsSingleSymbolRenderer = None
+    QgsRuleBasedRenderer = None
+    QgsFeatureRequest = None
     QgsSymbol = None
     QgsSymbolLayer = None
     QgsUnitTypes = None
@@ -47,7 +51,7 @@ except ImportError:
     Qt = None
     QColor = None
 
-from .presets import PRESETS
+from .presets import FLOOR_BAND_PALETTES, PRESETS
 
 
 _BrushSolid = getattr(getattr(Qt, "BrushStyle", Qt), "SolidPattern", getattr(Qt, "SolidPattern", 1)) if Qt else 1
@@ -313,13 +317,237 @@ def apply_geometry_generator_25d_style(
     return True
 
 
+def floor_band_palette_color(floor_index: int, palette_key: str, wall: bool = False) -> QColor:
+    """Get color for a specific floor band from a palette."""
+    palette = FLOOR_BAND_PALETTES.get(palette_key, FLOOR_BAND_PALETTES.get("civic_spectrum", {}))
+    colors = palette.get("colors", ("#f4d35e", "#ee964b", "#f95738", "#d7263d", "#9b5de5", "#00bbf9"))
+    color_hex = colors[(max(1, int(floor_index)) - 1) % len(colors)]
+    col = hex_to_qcolor(color_hex)
+    if wall:
+        return col.darker(120)
+    return col
+
+
+def estimate_layer_max_floors(
+    layer: QgsVectorLayer,
+    height_field: str,
+    default_floor_h: float = 3.0,
+    fallback_max: int = 12,
+) -> int:
+    """Scan layer attributes to find the maximum building floor count."""
+    if not layer or not layer.isValid():
+        return fallback_max
+
+    fields = layer.fields()
+    idx = fields.lookupField(height_field) if hasattr(fields, "lookupField") else fields.indexOf(height_field)
+    if idx < 0:
+        return fallback_max
+
+    is_floor_field = any(tok in height_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
+
+    max_val = 0.0
+    with contextlib.suppress(Exception):
+        for feat in layer.getFeatures():
+            val = feat.attribute(idx)
+            if val is not None:
+                num = float(val)
+                if num > max_val:
+                    max_val = num
+
+    if max_val <= 0:
+        return fallback_max
+
+    if is_floor_field:
+        return max(1, min(60, int(round(max_val))))
+    floors = int(round(max_val / max(0.5, default_floor_h)))
+    return max(1, min(60, floors))
+
+
+def apply_per_floor_bands_style(
+    layer: QgsVectorLayer,
+    config: Dict[str, Any],
+) -> bool:
+    """Apply classified per-floor colored 2.5D extrusion using Geometry Generator & Rule-Based Renderer."""
+    if not layer or not layer.isValid():
+        return False
+
+    h_field = config.get("height_field", "height")
+    h_scale = float(config.get("height_multiplier", 1.0))
+    floor_h = float(config.get("floor_height_m", 3.0))
+    palette_key = config.get("floor_palette", "civic_spectrum")
+
+    is_floor_field = any(tok in h_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
+
+    # Determine max floors
+    max_floors_cfg = int(config.get("max_floors", 0))
+    if max_floors_cfg > 0:
+        max_floors = max(1, min(60, max_floors_cfg))
+    else:
+        max_floors = estimate_layer_max_floors(layer, h_field, floor_h, fallback_max=12)
+
+    angle_deg = float(config.get("projection_angle", 45.0))
+    angle_rad = math.radians(angle_deg)
+    dx = math.cos(angle_rad)
+    dy = math.sin(angle_rad)
+
+    shadow_enabled = bool(config.get("shadow_enabled", True))
+    shadow_alpha = int(config.get("shadow_alpha", 40) * 2.55)
+    shadow_col = hex_to_qcolor(config.get("shadow_color", "#0f172a"), shadow_alpha)
+
+    sun_azimuth = float(config.get("sun_azimuth", 315.0))
+    shading_intensity = float(config.get("shading_intensity", 0.4))
+
+    # CRS scale factor (if EPSG:4326)
+    scale_factor = 1.0
+    if layer.crs().isValid() and layer.crs().isGeographic():
+        scale_factor = 1.0 / 111320.0
+
+    eff_floor_h = floor_h * scale_factor * h_scale
+
+    if is_floor_field:
+        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\"))), 3)"
+    else:
+        floor_count_expr = f"coalesce(to_int(round(try(\"{h_field}\") / {floor_h:.4f})), 3)"
+
+    sym_fill_type = getattr(getattr(Qgis, "SymbolType", Qgis), "Fill", 2)
+    map_unit = getattr(QgsUnitTypes, "RenderMapUnits", getattr(QgsUnitTypes, "RenderMillimeters", 1))
+
+    root_rule = QgsRuleBasedRenderer.Rule(None)
+
+    for i in range(1, max_floors + 1):
+        sym = QgsFillSymbol()
+        while sym.symbolLayerCount() > 0:
+            sym.deleteSymbolLayer(0)
+
+        band_bottom = (i - 1) * eff_floor_h
+        band_top = i * eff_floor_h
+
+        # 1. Ground Drop Shadow (on 1st floor rule)
+        if i == 1 and shadow_enabled:
+            sun_rad = math.radians(sun_azimuth)
+            shadow_dx = -math.sin(sun_rad) * 0.6
+            shadow_dy = -math.cos(sun_rad) * 0.6
+            tot_h_expr = f"({floor_count_expr}) * {eff_floor_h:.6f}"
+            shadow_expr = (
+                f"order_parts(translate($geometry, {shadow_dx:.6f} * {tot_h_expr}, {shadow_dy:.6f} * {tot_h_expr}), "
+                f"'distance($geometry, @map_extent_center)', False)"
+            )
+            sh_gen = QgsGeometryGeneratorSymbolLayer.create({
+                "SymbolType": "Fill",
+                "geometryModifier": shadow_expr,
+                "units": "MapUnit",
+            })
+            sh_gen.setSymbolType(sym_fill_type)
+            sh_gen.setGeometryExpression(shadow_expr)
+            sh_gen.setUnits(map_unit)
+            sh_fill = QgsSimpleFillSymbolLayer(shadow_col, _BrushSolid, QColor(0, 0, 0, 0))
+            sh_fill.setStrokeStyle(_PenNone)
+            sh_sub = QgsFillSymbol()
+            while sh_sub.symbolLayerCount() > 0:
+                sh_sub.deleteSymbolLayer(0)
+            sh_sub.appendSymbolLayer(sh_fill)
+            sh_gen.setSubSymbol(sh_sub)
+            sym.appendSymbolLayer(sh_gen)
+
+        # 2. Wall Facades for this floor band
+        wall_col = floor_band_palette_color(i, palette_key, wall=True)
+        roof_col = floor_band_palette_color(i, palette_key, wall=False)
+        outline_col = wall_col.darker(140)
+
+        wall_expr = (
+            f"CASE WHEN ({floor_count_expr}) >= {i} THEN "
+            f"order_parts(extrude(segments_to_lines(translate($geometry, {dx:.6f} * {band_bottom:.6f}, {dy:.6f} * {band_bottom:.6f})), "
+            f"{dx:.6f} * {eff_floor_h:.6f}, {dy:.6f} * {eff_floor_h:.6f}), "
+            f"'distance($geometry, translate(@map_extent_center, 1000 * @map_extent_width * cos(radians({angle_deg:.1f} + 180)), "
+            f"1000 * @map_extent_width * sin(radians({angle_deg:.1f} + 180))))', False) END"
+        )
+        w_gen = QgsGeometryGeneratorSymbolLayer.create({
+            "SymbolType": "Fill",
+            "geometryModifier": wall_expr,
+            "units": "MapUnit",
+        })
+        w_gen.setSymbolType(sym_fill_type)
+        w_gen.setGeometryExpression(wall_expr)
+        w_gen.setUnits(map_unit)
+
+        w_fill = QgsSimpleFillSymbolLayer(wall_col, _BrushSolid, outline_col, _PenSolid, 0.25)
+        if config.get("facade_shading", True):
+            w_color_expr = (
+                f"darker('{wall_col.name()}', "
+                f"100 + to_int({shading_intensity * 60:.1f} * (1.0 - abs(sin(radians({sun_azimuth:.1f} - {angle_deg:.1f}))))))"
+            )
+            w_fill.setDataDefinedProperty(
+                QgsSymbolLayer.PropertyFillColor,
+                QgsProperty.fromExpression(w_color_expr),
+            )
+        w_sub = QgsFillSymbol()
+        while w_sub.symbolLayerCount() > 0:
+            w_sub.deleteSymbolLayer(0)
+        w_sub.appendSymbolLayer(w_fill)
+        w_gen.setSubSymbol(w_sub)
+        sym.appendSymbolLayer(w_gen)
+
+        # 3. Roof Cap for this floor band (only on the top floor of that building)
+        if i >= max_floors:
+            roof_cond = f"({floor_count_expr}) >= {i}"
+            legend_label = f"Floor {i}+ ({i * floor_h:.1f}m+)"
+        else:
+            roof_cond = f"({floor_count_expr}) = {i}"
+            legend_label = f"Floor {i} ({i * floor_h:.1f}m)"
+
+        roof_expr = (
+            f"CASE WHEN {roof_cond} THEN "
+            f"translate($geometry, {dx:.6f} * {band_top:.6f}, {dy:.6f} * {band_top:.6f}) END"
+        )
+        r_gen = QgsGeometryGeneratorSymbolLayer.create({
+            "SymbolType": "Fill",
+            "geometryModifier": roof_expr,
+            "units": "MapUnit",
+        })
+        r_gen.setSymbolType(sym_fill_type)
+        r_gen.setGeometryExpression(roof_expr)
+        r_gen.setUnits(map_unit)
+
+        r_fill = QgsSimpleFillSymbolLayer(roof_col, _BrushSolid, roof_col.darker(130), _PenSolid, 0.3)
+        r_sub = QgsFillSymbol()
+        while r_sub.symbolLayerCount() > 0:
+            r_sub.deleteSymbolLayer(0)
+        r_sub.appendSymbolLayer(r_fill)
+        r_gen.setSubSymbol(r_sub)
+        sym.appendSymbolLayer(r_gen)
+
+        child_rule = QgsRuleBasedRenderer.Rule(sym, 0, 0, "", legend_label)
+        root_rule.appendChild(child_rule)
+
+    renderer = QgsRuleBasedRenderer(root_rule)
+    renderer.setUsingSymbolLevels(True)
+    renderer.setOrderByEnabled(True)
+    order_by_expr = (
+        f"distance($geometry, translate(@map_extent_center, "
+        f"1000 * @map_extent_width * cos(radians({angle_deg:.1f} + 180)), "
+        f"1000 * @map_extent_width * sin(radians({angle_deg:.1f} + 180))))"
+    )
+    renderer.setOrderBy(QgsFeatureRequest.OrderBy([
+        QgsFeatureRequest.OrderByClause(order_by_expr, False, True)
+    ]))
+
+    layer.setRenderer(renderer)
+    layer.emitStyleChanged()
+    layer.triggerRepaint()
+    return True
+
+
 def apply_25d_style(
     layer: QgsVectorLayer,
     config: Dict[str, Any],
 ) -> bool:
-    """Master styling dispatcher: applies either geometry generator or native 2.5D renderer."""
+    """Master styling dispatcher: applies either per-floor bands, geometry generator, or native 2.5D renderer."""
     if not layer or not layer.isValid():
         return False
+
+    render_mode = config.get("render_mode", "")
+    if render_mode == "per_floor_bands" or config.get("per_floor_bands", False):
+        return apply_per_floor_bands_style(layer, config)
 
     use_geom_gen = config.get("use_geometry_generator", True)
     if use_geom_gen:
