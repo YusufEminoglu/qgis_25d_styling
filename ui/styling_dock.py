@@ -74,9 +74,9 @@ class StylingDockWidget(QDockWidget):
 
     def __init__(self, iface, parent: Optional[QWidget] = None):
         super().__init__("QGIS 2.5D Styling", parent or (iface.mainWindow() if iface else None))
-        self.iface = iface
-        self.setObjectName("Qgis25DStylingDock")
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        _LeftDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "LeftDockWidgetArea", getattr(Qt, "LeftDockWidgetArea", 1))
+        _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
+        self.setAllowedAreas(_LeftDock | _RightDock)
 
         self._updating_controls = False
 

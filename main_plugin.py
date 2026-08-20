@@ -44,15 +44,18 @@ class Qgis25DStylingPlugin:
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToVectorMenu("QGIS 2.5D Styling", self.action)
 
+        _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
+
         # Create Right-Docked Panel
         self.dock = StylingDockWidget(self.iface, self.iface.mainWindow())
-        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+        self.iface.addDockWidget(_RightDock, self.dock)
         self.dock.hide()
 
     def toggle_dock(self) -> None:
+        _RightDock = getattr(getattr(Qt, "DockWidgetArea", Qt), "RightDockWidgetArea", getattr(Qt, "RightDockWidgetArea", 2))
         if not self.dock:
             self.dock = StylingDockWidget(self.iface, self.iface.mainWindow())
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+            self.iface.addDockWidget(_RightDock, self.dock)
         if self.dock.isVisible():
             self.dock.hide()
         else:

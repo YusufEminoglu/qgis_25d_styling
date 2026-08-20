@@ -147,13 +147,14 @@ def fetch_overpass_json(
         return cached
 
     encoded = urllib.parse.urlencode({"data": query}).encode("utf-8")
-    last_error = None
-
     for endpoint in OVERPASS_ENDPOINTS:
         if feedback and feedback.isCanceled():
             raise OsmDownloadError("Download canceled by user.")
 
         try:
+            if not endpoint.startswith(("http://", "https://")):
+                continue
+
             if feedback:
                 feedback.setProgressText(f"Querying Overpass mirror: {endpoint} ...")
 
@@ -163,7 +164,7 @@ def fetch_overpass_json(
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
 
-            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # nosec B310
                 if resp.status != 200:
                     last_error = f"HTTP {resp.status} from {endpoint}"
                     continue
