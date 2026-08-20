@@ -66,6 +66,13 @@
 
 ---
 
+## Acknowledgements & Inspiration
+
+- **Geocast Brasil**: Inspired by the 2.5D building floor classification concept and tutorial (*"QGIS - visualização de vetor em 2.5D (Classificando os andares dos prédios)"* — [Watch on YouTube](https://www.youtube.com/watch?v=03XlpABs9vE)).
+- **OpenStreetMap & Overpass API**: For open geospatial building footprint data and public API services.
+
+---
+
 ## License
 
 This project is licensed under the **GNU General Public License v2.0 or later** ([GPL-2.0-or-later](LICENSE)).
