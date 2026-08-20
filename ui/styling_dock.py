@@ -591,8 +591,8 @@ class StylingDockWidget(QDockWidget):
             swatch.setStyleSheet(f"background-color: {color}; border: 1px solid palette(mid); border-radius: 3px;")
 
     def _update_floor_palette_preview(self, *_args) -> None:
-        key = self.cb_floor_palette.currentData() if hasattr(self, "cb_floor_palette") else "civic_spectrum"
-        colors = FLOOR_BAND_PALETTES.get(key, FLOOR_BAND_PALETTES["civic_spectrum"])["colors"]
+        key = self.cb_floor_palette.currentData() if hasattr(self, "cb_floor_palette") else "teal_peach"
+        colors = FLOOR_BAND_PALETTES.get(key, FLOOR_BAND_PALETTES["teal_peach"])["colors"]
         for index, swatch in enumerate(self.floor_palette_swatches):
             color = colors[index % len(colors)]
             swatch.setToolTip(f"Floor {index + 1}: {color}")

@@ -331,7 +331,7 @@ def apply_geometry_generator_25d_style(
 
 def floor_band_palette_color(floor_index: int, palette_key: str, wall: bool = False) -> QColor:
     """Get color for a specific floor band from a palette."""
-    palette = FLOOR_BAND_PALETTES.get(palette_key, FLOOR_BAND_PALETTES.get("civic_spectrum", {}))
+    palette = FLOOR_BAND_PALETTES.get(palette_key, FLOOR_BAND_PALETTES.get("teal_peach", {}))
     colors = palette.get("colors", ("#f4d35e", "#ee964b", "#f95738", "#d7263d", "#9b5de5", "#00bbf9"))
     color_hex = colors[(max(1, int(floor_index)) - 1) % len(colors)]
     col = hex_to_qcolor(color_hex)
@@ -387,7 +387,7 @@ def apply_per_floor_bands_style(
     h_scale = float(config.get("height_multiplier", 1.0))
     floor_h = float(config.get("floor_height_m", 3.0))
     default_levels = int(config.get("default_levels", 3))
-    palette_key = config.get("floor_palette", "civic_spectrum")
+    palette_key = config.get("floor_palette", "teal_peach")
 
     is_floor_field = any(tok in h_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
 
@@ -577,9 +577,9 @@ def apply_preset_to_layer(
     height_multiplier: float = 1.0,
     use_geom_gen: bool = True,
 ) -> bool:
-    """Apply one of the 8 curated architectural presets by key."""
+    """Apply one of the curated architectural presets by key."""
     if preset_key not in PRESETS:
-        preset_key = "swiss_minimalist"
+        preset_key = "warm_civic"
     cfg = dict(PRESETS[preset_key])
     cfg["height_field"] = height_field
     cfg["height_multiplier"] = height_multiplier

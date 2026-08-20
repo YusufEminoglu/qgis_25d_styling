@@ -29,7 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "floor_height_m": 3.2,
     "floor_line_color": "#cbd5e1",
     "floor_line_width": 0.2,
-    "floor_palette": "civic_spectrum",
+    "floor_palette": "teal_peach",
     "max_floors": 0,
 }
 

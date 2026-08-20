@@ -40,7 +40,7 @@ This first published release keeps the product focused on one result: 2.5D build
 30. Added feature draw ordering to the Geometry Generator renderer.
 31. Expanded the Processing algorithm with renderer and fallback-height controls.
 32. Added sink and renderer failure checks to Processing execution.
-33. Added 12 per-floor color palettes with a live ten-floor swatch preview.
+33. Added 13 curated per-floor color palettes with a live ten-floor swatch preview.
 34. Added OSM floor-source and fallback-height coverage to both QGIS release runtimes.
 35. Added a distinctive 512 px transparent plugin icon.
 36. Kept Processing focused on one styling algorithm; OSM acquisition remains an explicit dock action.
@@ -48,3 +48,4 @@ This first published release keeps the product focused on one result: 2.5D build
 38. Fixed OSM buildings with an explicit `height` tag but no `building:levels` tag falling back to the constant default floor count instead of an estimate derived from height; the fallback-count status message and `levels_source` attribute now distinguish "estimated" from "default".
 39. Disabled the Sun Azimuth and Shading Depth controls in Native QGIS 2.5D mode, since the native renderer has no directional-shading equivalent and previously left them interactive with no visible effect.
 40. Reported a Processing-algorithm error instead of silently skipping symbology and QML export when the destination layer cannot be resolved after being written.
+41. Fixed themes only changing the projection angle in Per-Floor Color Bands mode (the mode OSM downloads default to): that renderer colors floors entirely from the Floor Palette selector and never read a theme's wall/roof colors, so switching themes looked like nothing but the angle moved. Each of the 10 themes now carries its own matching per-floor gradient (derived from that theme's own roof/wall colors) and selecting a theme now switches the Floor Palette selector to it automatically. Added a default "Teal to Yavru Agzi" gradient palette matching the new default building colors, replacing the unrelated rainbow default.
