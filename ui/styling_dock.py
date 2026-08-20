@@ -697,12 +697,17 @@ class StylingDockWidget(QDockWidget):
         """Apply current configuration to the selected polygon layer."""
         layer = self.cb_layer.currentLayer()
         if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
+            if self.iface and hasattr(self.iface, "messageBar"):
+                self.iface.messageBar().pushWarning("2.5D Styling", "Please select a valid polygon vector layer first.")
             return
 
         cfg = self.get_current_config()
         success = apply_25d_style(layer, cfg)
-        if success and hasattr(self.iface, "messageBar"):
-            pass  # quiet success for smooth live auto-apply
+        if success:
+            layer.emitStyleChanged()
+            layer.triggerRepaint()
+            if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
 
     def apply_preset(self, preset_key: str) -> None:
         """Load and apply preset archetype."""
@@ -710,7 +715,7 @@ class StylingDockWidget(QDockWidget):
             cfg = dict(PRESETS[preset_key])
             self.load_config_into_ui(cfg)
             self.apply_current_style()
-            if hasattr(self.iface, "messageBar"):
+            if self.iface and hasattr(self.iface, "messageBar"):
                 self.iface.messageBar().pushSuccess("2.5D Styling", f"Applied preset: {PRESETS[preset_key]['name']}")
 
     def reset_to_2d(self) -> None:
@@ -723,8 +728,11 @@ class StylingDockWidget(QDockWidget):
                 "outline_width": "0.3",
             })
             layer.setRenderer(QgsSingleSymbolRenderer(sym))
+            layer.emitStyleChanged()
             layer.triggerRepaint()
-            if hasattr(self.iface, "messageBar"):
+            if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+            if self.iface and hasattr(self.iface, "messageBar"):
                 self.iface.messageBar().pushInfo("2.5D Styling", "Reset layer to standard 2D flat fill.")
 
     def export_qml(self) -> None:

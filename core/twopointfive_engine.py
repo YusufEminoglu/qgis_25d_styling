@@ -173,11 +173,22 @@ def apply_geometry_generator_25d_style(
     sun_azimuth = float(config.get("sun_azimuth", 315.0))
     shading_intensity = float(config.get("shading_intensity", 0.4))
 
+    # If layer CRS is geographic (degrees, EPSG:4326), height in meters needs scale conversion
+    scale_factor = 1.0
+    if layer.crs().isValid() and layer.crs().isGeographic():
+        # 1 meter ~ 0.000009 degrees at equator
+        scale_factor = 1.0 / 111320.0
+
+    eff_h = f"({h_expr}) * {scale_factor:.8f}" if scale_factor != 1.0 else f"({h_expr})"
+
     # Base Fill Symbol
     fill_symbol = QgsFillSymbol()
-    # Remove default symbol layers
     while fill_symbol.symbolLayerCount() > 0:
         fill_symbol.deleteSymbolLayer(0)
+
+    sym_fill_type = getattr(getattr(Qgis, "SymbolType", Qgis), "Fill", 2)
+    sym_line_type = getattr(getattr(Qgis, "SymbolType", Qgis), "Line", 1)
+    map_unit = getattr(QgsUnitTypes, "RenderMapUnits", getattr(QgsUnitTypes, "RenderMillimeters", 1))
 
     # ── 1. Ground Drop Shadow (Optional) ──
     if shadow_enabled:
@@ -186,12 +197,17 @@ def apply_geometry_generator_25d_style(
         shadow_dx = -math.sin(sun_rad) * 0.6
         shadow_dy = -math.cos(sun_rad) * 0.6
         shadow_expr = (
-            f"order_parts(translate($geometry, {shadow_dx:.4f} * {h_expr}, {shadow_dy:.4f} * {h_expr}))"
+            f"order_parts(translate($geometry, {shadow_dx:.6f} * {eff_h}, {shadow_dy:.6f} * {eff_h}), 'distance($geometry, @map_extent_center)', False)"
         )
         shadow_gen = QgsGeometryGeneratorSymbolLayer.create({
-            "geometry_type": "Polygon",
-            "geometry_expression": shadow_expr,
+            "SymbolType": "Fill",
+            "geometryModifier": shadow_expr,
+            "units": "MapUnit",
         })
+        shadow_gen.setSymbolType(sym_fill_type)
+        shadow_gen.setGeometryExpression(shadow_expr)
+        shadow_gen.setUnits(map_unit)
+
         shadow_fill = QgsSimpleFillSymbolLayer(shadow_col, _BrushSolid, QColor(0, 0, 0, 0))
         shadow_fill.setStrokeStyle(_PenNone)
         shadow_sub_sym = QgsFillSymbol()
@@ -202,20 +218,26 @@ def apply_geometry_generator_25d_style(
         fill_symbol.appendSymbolLayer(shadow_gen)
 
     # ── 2. Extruded Walls / Facades with Lighting ──
-    # Extrude polygon footprint along projection vector
+    # Extrude perimeter segments to form 3D vertical wall quadrilaterals
     wall_expr = (
-        f"extrude($geometry, {dx:.4f} * {h_expr}, {dy:.4f} * {h_expr})"
+        f"order_parts(extrude(segments_to_lines($geometry), {dx:.6f} * {eff_h}, {dy:.6f} * {eff_h}), "
+        f"'distance($geometry, translate(@map_extent_center, 1000 * @map_extent_width * cos(radians({angle_deg:.1f} + 180)), "
+        f"1000 * @map_extent_width * sin(radians({angle_deg:.1f} + 180))))', False)"
     )
     wall_gen = QgsGeometryGeneratorSymbolLayer.create({
-        "geometry_type": "Polygon",
-        "geometry_expression": wall_expr,
+        "SymbolType": "Fill",
+        "geometryModifier": wall_expr,
+        "units": "MapUnit",
     })
+    wall_gen.setSymbolType(sym_fill_type)
+    wall_gen.setGeometryExpression(wall_expr)
+    wall_gen.setUnits(map_unit)
+
     wall_fill = QgsSimpleFillSymbolLayer(
         wall_col, _BrushSolid, outline_col, _PenSolid, outline_width
     )
     # Solar shading data-defined color modulation if shading enabled
     if config.get("facade_shading", True):
-        # Data-defined wall color: darker on shaded facades
         color_expr = (
             f"darker('{wall_col.name()}', "
             f"100 + to_int({shading_intensity * 60:.1f} * (1.0 - abs(sin(radians({sun_azimuth:.1f} - {angle_deg:.1f}))))))"
@@ -233,20 +255,24 @@ def apply_geometry_generator_25d_style(
 
     # ── 3. Floor Band Division Lines (Optional) ──
     if floor_bands and floor_h > 0.5:
-        # Generates intermediate boundary lines at floor intervals
-        # For simplicity and robust rendering across all engines, project intermediate roof rings
+        eff_floor_h = floor_h * scale_factor
         floor_expr = (
             f"collect_geometries(\n"
             f"  array_foreach(\n"
-            f"    generate_series(1, to_int({h_expr} / {floor_h:.2f})),\n"
-            f"    boundary(translate($geometry, {dx:.4f} * (@element * {floor_h:.2f}), {dy:.4f} * (@element * {floor_h:.2f})))\n"
+            f"    generate_series(1, to_int({eff_h} / {eff_floor_h:.6f})),\n"
+            f"    boundary(translate($geometry, {dx:.6f} * (@element * {eff_floor_h:.6f}), {dy:.6f} * (@element * {eff_floor_h:.6f})))\n"
             f"  )\n"
             f")"
         )
         floor_gen = QgsGeometryGeneratorSymbolLayer.create({
-            "geometry_type": "Line",
-            "geometry_expression": floor_expr,
+            "SymbolType": "Line",
+            "geometryModifier": floor_expr,
+            "units": "MapUnit",
         })
+        floor_gen.setSymbolType(sym_line_type)
+        floor_gen.setGeometryExpression(floor_expr)
+        floor_gen.setUnits(map_unit)
+
         floor_line = QgsSimpleLineSymbolLayer(
             floor_line_col, floor_line_width, _PenSolid
         )
@@ -259,12 +285,17 @@ def apply_geometry_generator_25d_style(
 
     # ── 4. Roof Cap Polygon ──
     roof_expr = (
-        f"translate($geometry, {dx:.4f} * {h_expr}, {dy:.4f} * {h_expr})"
+        f"translate($geometry, {dx:.6f} * {eff_h}, {dy:.6f} * {eff_h})"
     )
     roof_gen = QgsGeometryGeneratorSymbolLayer.create({
-        "geometry_type": "Polygon",
-        "geometry_expression": roof_expr,
+        "SymbolType": "Fill",
+        "geometryModifier": roof_expr,
+        "units": "MapUnit",
     })
+    roof_gen.setSymbolType(sym_fill_type)
+    roof_gen.setGeometryExpression(roof_expr)
+    roof_gen.setUnits(map_unit)
+
     roof_fill = QgsSimpleFillSymbolLayer(
         roof_col, _BrushSolid, roof_outline_col, _PenSolid, roof_outline_width
     )
@@ -277,6 +308,7 @@ def apply_geometry_generator_25d_style(
 
     renderer = QgsSingleSymbolRenderer(fill_symbol)
     layer.setRenderer(renderer)
+    layer.emitStyleChanged()
     layer.triggerRepaint()
     return True
 
