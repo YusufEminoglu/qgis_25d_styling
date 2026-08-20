@@ -1,0 +1,25 @@
+[general]
+name=QGIS 2.5D Styling
+version=1.0.0
+hasProcessingProvider=yes
+
+category=Vector
+tags=2.5d, 3d, buildings, extrusion, architectural, osm, overpass, shading, solar, shadow, floor bands, qml, symbology, style, isometric, oblique, cavalier
+
+description=Dedicated 2.5D architectural building extrusion and symbology studio with built-in OpenStreetMap Overpass downloader. Includes dynamic solar aspect lighting, architectural floor divisions, ground drop shadows, 8 curated design archetypes, and live auto-apply.
+about=QGIS 2.5D Styling is a specialized studio dock for transforming flat 2D building footprint polygons into publication-grade 2.5D architectural massing models directly in QGIS. Features an integrated OSM Overpass downloader to fetch building footprints and level/height tags for any extent, dynamic solar illumination with aspect-based facade shading, multi-layer floor divisions (mullions), directional ground shadows, and 8 curated architectural presets (Swiss Minimalist, Dark Obsidian, Warm Terracotta, Vintage Blueprint, Emerald Glass, Cyberpunk Neon, Solar Heatmap, and Monochrome Print). Includes headless Processing algorithms and standalone QML style export. Repository: https://github.com/YusufEminoglu/qgis_25d_styling
+
+homepage=https://github.com/YusufEminoglu/qgis_25d_styling
+repository=https://github.com/YusufEminoglu/qgis_25d_styling
+tracker=https://github.com/YusufEminoglu/qgis_25d_styling/issues
+
+author=Yusuf Eminoglu
+email=yusuf.eminoglu@deu.edu.tr
+
+icon=icons/icon.png
+
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+
+changelog=
+    1.0.0 - Initial release: Dedicated 2.5D architectural building extrusion studio with built-in OSM Overpass downloader, solar aspect shading, floor division lines, 8 curated design presets, right-docked studio panel, and headless Processing algorithms.
