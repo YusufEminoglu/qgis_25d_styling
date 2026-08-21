@@ -190,7 +190,7 @@ This plugin is one of a family of open-source QGIS plugins for urban planning by
 
 ## Acknowledgements &amp; Inspiration
 
-The per-floor building classification concept and workflow in this plugin are directly inspired by **Geocast Brasil**'s tutorial *"QGIS - visualiza&ccedil;&atilde;o de vetor em 2.5D (Classificando os andares dos pr&eacute;dios)"* &mdash; [Watch on YouTube](https://www.youtube.com/watch?v=03XlpABs9vE).
+The per-floor building classification concept and workflow in this plugin are directly inspired by a tutorial from **Narcélio de Sá** (Geocast Brasil) — *"QGIS - visualiza&ccedil;&atilde;o de vetor em 2.5D (Classificando os andares dos pr&eacute;dios)"* — [Watch on YouTube](https://www.youtube.com/watch?v=03XlpABs9vE) &middot; [narceliodesa.com](https://narceliodesa.com/).
 
 Further thanks to **Klas Karlsson** and the wider QGIS cartography community for shared geometry-generator 2.5D extrusion and solar-shadow techniques. Full notices are collected in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 

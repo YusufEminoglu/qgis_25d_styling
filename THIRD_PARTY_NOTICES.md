@@ -16,7 +16,7 @@ This plugin, **QGIS 2.5D Styling**, incorporates ideas, references, and data fro
 
 Special thanks and appreciation to the open-source cartography community and geospatial educators who developed and shared early geometry-generator 2.5D architectural extrusion techniques in QGIS:
 
-- **Geocast Brasil** — The per-floor building classification concept and workflow in this plugin are directly inspired by the tutorial *"QGIS - visualização de vetor em 2.5D (Classificando os andares dos prédios)"* ([Watch on YouTube](https://www.youtube.com/watch?v=03XlpABs9vE)).
+- **Narcélio de Sá (Geocast Brasil)** — The per-floor building classification concept and workflow in this plugin are directly inspired by his tutorial *"QGIS - visualização de vetor em 2.5D (Classificando os andares dos prédios)"* ([Watch on YouTube](https://www.youtube.com/watch?v=03XlpABs9vE)) — [narceliodesa.com](https://narceliodesa.com/).
 - **Klas Karlsson** — For foundational QGIS tutorials demonstrating 2.5D extrusion, Geometry Generator expressions, and dynamic solar shadow projections on YouTube ([Klas Karlsson YouTube Channel](https://www.youtube.com/@KlasKarlsson)).
 - **QGIS Community Cartographers** — For shared community expressions on multi-level building offsets and architectural shading.
 
