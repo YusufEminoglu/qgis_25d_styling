@@ -389,9 +389,7 @@
 
 <!-- HERO -->
 <section class="hero" id="top">
-  <div class="hero-bg">
-    <img src="assets/hero_city_25d.jpg" alt="2.5D city visualization" onerror="this.style.display='none'" />
-  </div>
+  <div class="hero-bg"></div>
   <div class="hero-content">
     <div class="hero-eyebrow">QGIS Plugin &middot; Urban Visualization</div>
     <h1 class="hero-title">
@@ -427,16 +425,6 @@
     <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#10004; QML Export</span>
     <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#10004; GPL-2.0-or-later</span>
     <span class="badge" style="background:rgba(148,163,184,0.08);border-color:rgba(148,163,184,0.2);color:#94a3b8;">&#128100; Yusuf Emino&#287;lu</span>
-  </div>
-</div>
-
-<!-- HERO FULL IMAGE -->
-<div style="padding:0 2rem;position:relative;z-index:1;">
-  <div style="max-width:1280px;margin:2rem auto;">
-    <div class="image-full">
-      <img src="assets/hero_city_25d.jpg" alt="Dense urban 2.5D building visualization with teal-to-peach floor gradients" style="width:100%;max-height:560px;object-fit:cover;" onerror="this.parentElement.parentElement.style.display='none'" />
-      <div class="image-caption">Dense urban cityscape rendered with the Geometry Generator renderer &mdash; teal-to-peach per-floor gradient palette, directional shading, and soft drop shadows</div>
-    </div>
   </div>
 </div>
 
@@ -628,9 +616,27 @@
           <span class="theme-chip"><span class="theme-dot" style="background:linear-gradient(135deg,#004d61,#00bcd4)"></span>Deep Ocean</span>
         </div>
       </div>
-      <div class="image-full">
-        <img src="assets/themes_showcase.jpg" alt="Four theme variants: Midnight Blue, Terracotta, Forest Green, Pearl White" onerror="this.parentElement.style.display='none'" />
-        <div class="image-caption">Four of the 10 built-in themes &mdash; each a fully coordinated facade, roof, shading, and floor-gradient identity</div>
+      <div class="card" style="padding:2rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
+        <h3 style="margin-bottom:1rem;color:var(--teal);">🎨 Architectural Palette Matrix</h3>
+        <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1.5rem;">Every theme coordinates facade base colors, roof tints, directional sun shadows, and vertical floor height bands into a single cohesive visual identity.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+          <div style="background:rgba(10,22,40,0.6);padding:0.75rem;border-radius:8px;border-left:3px solid #2ec4b6;">
+            <div style="font-weight:600;font-size:0.85rem;">Teal & Peach (Default)</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Civic & Institutional</div>
+          </div>
+          <div style="background:rgba(10,22,40,0.6);padding:0.75rem;border-radius:8px;border-left:3px solid #f4a261;">
+            <div style="font-weight:600;font-size:0.85rem;">Terracotta Warmth</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Historic & Mediterranean</div>
+          </div>
+          <div style="background:rgba(10,22,40,0.6);padding:0.75rem;border-radius:8px;border-left:3px solid #3b82f6;">
+            <div style="font-weight:600;font-size:0.85rem;">Midnight Blue</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Dark Mode & Night Print</div>
+          </div>
+          <div style="background:rgba(10,22,40,0.6);padding:0.75rem;border-radius:8px;border-left:3px solid #10b981;">
+            <div style="font-weight:600;font-size:0.85rem;">Forest Green</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Ecological & Landscape</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -665,9 +671,15 @@
           <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-muted);">+ 18 more palettes included</div>
         </div>
       </div>
-      <div class="image-full">
-        <img src="assets/floor_palette_showcase.jpg" alt="Per-floor color gradient showcase across a multi-storey building cross section" onerror="this.parentElement.style.display='none'" />
-        <div class="image-caption">Building cross-section showing floors in distinct gradient bands &mdash; one of 23 palette options</div>
+      <div class="card" style="padding:2rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-md);">
+        <h3 style="margin-bottom:1rem;color:var(--peach);">🏢 Vertical Floor Elevation Ramp</h3>
+        <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1.5rem;">Buildings are sliced into programmatic vertical floor bands with automated floor-to-height classification.</p>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="background:#f4a261;height:24px;border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#0a1628;">Roof / Penthouse (Fl 8+)</div>
+          <div style="background:#e76f51;height:24px;border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#fff;">Upper Residential (Fl 5-7)</div>
+          <div style="background:#2a9d8f;height:24px;border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#fff;">Mid Offices (Fl 2-4)</div>
+          <div style="background:#2ec4b6;height:24px;border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#0a1628;">Ground Commercial / Retail (Fl 1)</div>
+        </div>
       </div>
     </div>
   </div>
@@ -718,13 +730,6 @@
           <h4>Apply, export QML, or restore</h4>
           <p>Click Apply to commit the renderer. Export a QML style file for reuse. Restore returns the original renderer non-destructively at any time. Settings persist across sessions.</p>
         </div>
-      </div>
-    </div>
-
-    <div style="margin-top:3rem;">
-      <div class="image-full">
-        <img src="assets/osm_workflow.jpg" alt="OSM data pipeline to 2.5D building visualization" style="max-height:500px;object-fit:cover;width:100%;" onerror="this.parentElement.parentElement.style.display='none'" />
-        <div class="image-caption">The complete data pipeline: OSM footprints &#8594; floor-count analysis &#8594; 2.5D extrusion with teal-to-peach gradient</div>
       </div>
     </div>
   </div>
