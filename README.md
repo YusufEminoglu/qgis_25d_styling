@@ -11,7 +11,7 @@
 <p align="center">
   <a href="metadata.txt"><img alt="QGIS" src="https://img.shields.io/badge/QGIS-3.28%2B-5da85d?style=for-the-badge"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0--or--later-111827?style=for-the-badge"></a>
-  <a href="https://geophilo.pages.dev/qgis_25d_styling/"><img alt="Documentation" src="https://img.shields.io/badge/%F0%9F%93%96_Reference_Manual-13a0a0?style=for-the-badge"></a>
+  <a href="https://geophilo.com/qgis_25d_styling/"><img alt="Documentation" src="https://img.shields.io/badge/%F0%9F%93%96_Reference_Manual-13a0a0?style=for-the-badge"></a>
   <img alt="OpenStreetMap native" src="https://img.shields.io/badge/data-OpenStreetMap_native-8f6f5b?style=for-the-badge">
   <img alt="Processing" src="https://img.shields.io/badge/workflow-Processing_algorithm-2f4858?style=for-the-badge">
 </p>
@@ -29,7 +29,7 @@
 
 ## &#128214; Documentation
 
-**[Full reference manual](https://geophilo.pages.dev/qgis_25d_styling/)** — a polished single-page guide to every renderer, theme, palette, and workflow. Hosted on Web Documentation.
+**[Full reference manual](https://geophilo.com/qgis_25d_styling/)** — a polished single-page guide to every renderer, theme, palette, and workflow. Hosted on Web Documentation.
 
 ---
 
