@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.1] - 2026-09-06
+
+- Migrate repository and documentation URLs to GitLab and Cloudflare Pages.
+
 All notable changes to QGIS 2.5D Styling are documented here. The project follows Semantic Versioning and Keep a Changelog.
 
 ## [1.0.0] - 2026-08-21
