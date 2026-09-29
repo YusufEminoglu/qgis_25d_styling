@@ -55,7 +55,7 @@ Open QGIS &rarr; **Plugins &rarr; Manage and Install Plugins &rarr; All**, searc
 
 ### Install from a release ZIP
 
-Download `qgis_25d_styling.zip` from [Releases](https://gitlab.com/geospacephilo/qgis_25d_styling/releases), then **Plugins &rarr; Manage and Install Plugins &rarr; Install from ZIP**.
+Download `qgis_25d_styling.zip` from [Releases](https://gitlab.com/geophilo1/qgis_25d_styling/releases), then **Plugins &rarr; Manage and Install Plugins &rarr; Install from ZIP**.
 
 ### Install for development
 
@@ -182,11 +182,11 @@ This plugin is one of a family of open-source QGIS plugins for urban planning by
 
 | Planning &amp; analysis | CAD &amp; production | 3D &amp; visualization |
 |---|---|---|
-| [PlanX](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; drafting-grade CAD | [PlanX 3D City](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; Three.js city viewer |
-| [GeoStats Lab](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; spatial statistics | [EasyFillet](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; tangent-arc fillet | [3D OSM Model](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; OSM &rarr; 3D city in browser |
-| [Suitability Lab](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; raster MCDA | [Settlement Toolset](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; settlement plans | [OSM Quick 3D](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; OSM &rarr; native QGIS 3D |
-| [DataCube Lab](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; spatiotemporal cubes | [UIP Toolset](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; master-plan automation | [CartoLab](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; publication cartography |
-| [Urban Resilience](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; resilience tools | [ParcelFlux](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; parcel subdivision | [Urban Procedural 3D](https://gitlab.com/geospacephilo/qgis_25d_styling) &mdash; parametric zoning |
+| [PlanX](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; drafting-grade CAD | [PlanX 3D City](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; Three.js city viewer |
+| [GeoStats Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatial statistics | [EasyFillet](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; tangent-arc fillet | [3D OSM Model](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; OSM &rarr; 3D city in browser |
+| [Suitability Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; raster MCDA | [Settlement Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; settlement plans | [OSM Quick 3D](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; OSM &rarr; native QGIS 3D |
+| [DataCube Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatiotemporal cubes | [UIP Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; master-plan automation | [CartoLab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; publication cartography |
+| [Urban Resilience](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; resilience tools | [ParcelFlux](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; parcel subdivision | [Urban Procedural 3D](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; parametric zoning |
 
 ## Acknowledgements &amp; Inspiration
 
