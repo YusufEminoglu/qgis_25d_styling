@@ -49,7 +49,7 @@ OVERPASS_ENDPOINTS = (
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
 )
-USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.0.1 (https://github.com/YusufEminoglu/qgis_25d_styling)"
+USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.0.2 (https://github.com/YusufEminoglu/qgis_25d_styling)"
 DEFAULT_TIMEOUT_S = 60
 CACHE_TTL_S = 7 * 24 * 3600  # 1 week cache
 

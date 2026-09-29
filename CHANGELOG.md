@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-29
+
 ### Fixed
 
 - **The Processing algorithm never styled its output.** Vector destinations are
@@ -12,6 +14,10 @@
   from a template styled with the same settings. Per-floor bands take the
   maximum floor count from the input data during the run. The e2e suite now
   runs the algorithm as temporary and GeoPackage output.
+
+### Changed
+
+- Repository, tracker and release links point at the `geophilo1` GitLab namespace.
 
 ## [1.0.1] - 2026-09-06
 
