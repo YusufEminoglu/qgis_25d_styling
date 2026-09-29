@@ -210,8 +210,66 @@ try:
     algorithms = processing_provider.algorithms()
     assert len(algorithms) == 1
     assert algorithms[0].name() == "apply_25d_style"
-    QgsApplication.processingRegistry().removeProvider(processing_provider)
     record_pass("Single-purpose Processing inventory")
+
+    # Run the algorithm the way the Processing GUI does. Vector destinations
+    # are written to disk even as "temporary" outputs, so a style set on the
+    # context's layer during the run never reached the loaded layer, and the
+    # optional QML was never written.
+    import qgis as _qgis_pkg
+    _plugins_dir = os.path.join(os.path.dirname(os.path.dirname(_qgis_pkg.__file__)), "plugins")
+    if _plugins_dir not in sys.path:
+        sys.path.insert(0, _plugins_dir)
+    import processing
+    from processing.core.Processing import Processing
+    Processing.initialize()
+    from qgis.core import QgsGeometryGeneratorSymbolLayer
+
+    bld = QgsVectorLayer("Polygon?crs=EPSG:32635&field=height:double&field=levels:integer",
+                         "alg_buildings", "memory")
+    rows = []
+    for i, (h, lv) in enumerate(((9.0, 3), (18.0, 6), (27.0, 9))):
+        x0 = 500000 + i * 30
+        f = QgsFeature(bld.fields())
+        f.setGeometry(QgsGeometry.fromPolygonXY([[QgsPointXY(x0, 4200000), QgsPointXY(x0 + 20, 4200000),
+                                                  QgsPointXY(x0 + 20, 4200020), QgsPointXY(x0, 4200020),
+                                                  QgsPointXY(x0, 4200000)]]))
+        f.setAttributes([h, lv])
+        rows.append(f)
+    bld.dataProvider().addFeatures(rows)
+    QgsProject.instance().addMapLayer(bld)
+    out_dir = tempfile.mkdtemp(prefix="q25d_alg_")
+
+    def _run_loaded(params):
+        before = set(QgsProject.instance().mapLayers())
+        processing.runAndLoadResults("qgis_25d_styling:apply_25d_style", params)
+        new = [QgsProject.instance().mapLayer(i) for i in set(QgsProject.instance().mapLayers()) - before]
+        assert len(new) == 1, f"expected one loaded layer, got {len(new)}"
+        return new[0]
+
+    for kind in ("TEMPORARY_OUTPUT", os.path.join(out_dir, "styled.gpkg")):
+        qml = os.path.join(out_dir, f"style_{len(os.listdir(out_dir))}.qml")
+        loaded = _run_loaded({"INPUT": bld, "HEIGHT_FIELD": "height", "OUTPUT": kind, "OUTPUT_QML": qml})
+        sym = loaded.renderer().symbol() if isinstance(loaded.renderer(), QgsSingleSymbolRenderer) else None
+        layers = [sym.symbolLayer(k) for k in range(sym.symbolLayerCount())] if sym else []
+        assert layers and all(isinstance(sl, QgsGeometryGeneratorSymbolLayer) for sl in layers), \
+            f"loaded output is not 2.5D-styled: {[type(sl).__name__ for sl in layers]}"
+        assert os.path.exists(qml) and os.path.getsize(qml) > 1000, "QML style was not written"
+        with open(qml, encoding="utf-8") as fh:
+            assert fh.read().count('class="GeometryGenerator"') >= 3, "QML lacks the 2.5D style"
+    record_pass("Processing output is 2.5D-styled on load and QML is written (temporary + GeoPackage)")
+
+    # per-floor bands: the tallest building (9 levels) sets the band count,
+    # read from the data during the run, not from the not-yet-loaded output
+    mode_keys = algorithms[0].RENDER_MODE_KEYS
+    loaded = _run_loaded({"INPUT": bld, "HEIGHT_FIELD": "levels",
+                          "RENDER_MODE": mode_keys.index("per_floor_bands"),
+                          "OUTPUT": os.path.join(out_dir, "floors.gpkg")})
+    assert isinstance(loaded.renderer(), QgsRuleBasedRenderer), type(loaded.renderer()).__name__
+    labels = " ".join(r.label() or "" for r in loaded.renderer().rootRule().descendants())
+    assert "9" in labels, f"band rules do not reach floor 9: {labels[:200]}"
+    record_pass("Per-floor bands use the data's maximum floor count")
+    QgsApplication.processingRegistry().removeProvider(processing_provider)
 
     QgsProject.instance().removeAllMapLayers()
 

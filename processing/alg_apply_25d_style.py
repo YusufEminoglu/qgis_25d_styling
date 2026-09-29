@@ -18,11 +18,14 @@ from qgis.core import (
     QgsProcessingParameterNumber,
     QgsProcessingParameterVectorDestination,
     QgsVectorLayer,
+    QgsWkbTypes,
 )
 
 from ..core.presets import PRESETS
 from ..core.qml_exporter import export_layer_qml
-from ..core.twopointfive_engine import apply_25d_style
+from ..core.config import normalize_config
+from ..core.twopointfive_engine import apply_25d_style, max_floors_from_values
+from ._styling import style_output
 
 
 class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
@@ -221,61 +224,81 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
         mode_idx = self.parameterAsEnum(parameters, self.RENDER_MODE, context)
         render_mode = self.RENDER_MODE_KEYS[mode_idx] if 0 <= mode_idx < len(self.RENDER_MODE_KEYS) else "geometry_generator"
 
-        # Copy features to output sink
+        # Copy features to the output sink, noting the height values: the
+        # per-floor style needs the tallest building, and the output layer
+        # itself is not available until QGIS loads it after the run.
+        h_idx = source.fields().lookupField(h_field)
+        heights = []
         total = 100.0 / source.featureCount() if source.featureCount() else 0
         for i, feat in enumerate(source.getFeatures()):
             if feedback.isCanceled():
                 break
             sink.addFeature(feat, QgsFeatureSink.FastInsert)
+            if h_idx >= 0:
+                heights.append(feat.attribute(h_idx))
             if total > 0:
                 feedback.setProgress(int(i * total))
 
-        out_layer = context.getMapLayer(dest_id)
-        if out_layer and isinstance(out_layer, QgsVectorLayer):
-            if preset_idx > 0 and preset_idx < len(self.PRESET_KEYS):
-                pkey = self.PRESET_KEYS[preset_idx]
-                cfg = dict(PRESETS[pkey])
-                cfg["height_field"] = h_field
-                cfg["height_multiplier"] = h_scale
-                cfg["default_height"] = default_height
-                cfg["render_mode"] = render_mode
-            else:
-                cfg = {
-                    "height_field": h_field,
-                    "height_multiplier": h_scale,
-                    "default_height": default_height,
-                    "render_mode": render_mode,
-                    "projection_angle": self.parameterAsDouble(parameters, self.PROJECTION_ANGLE, context),
-                    "sun_azimuth": self.parameterAsDouble(parameters, self.SUN_AZIMUTH, context),
-                    "shading_intensity": self.parameterAsDouble(parameters, self.SHADING_INTENSITY, context),
-                    "wall_color": self.parameterAsColor(parameters, self.WALL_COLOR, context).name(),
-                    "roof_color": self.parameterAsColor(parameters, self.ROOF_COLOR, context).name(),
-                    "outline_color": self.parameterAsColor(parameters, self.OUTLINE_COLOR, context).name(),
-                    "outline_width": 0.3,
-                    "roof_outline_color": self.parameterAsColor(parameters, self.OUTLINE_COLOR, context).name(),
-                    "roof_outline_width": 0.4,
-                    "shadow_enabled": True,
-                    "shadow_color": "#0f172a",
-                    "shadow_alpha": 40,
-                    "shadow_blur": 4.0,
-                    "floor_bands_enabled": self.parameterAsBoolean(parameters, self.FLOOR_BANDS, context),
-                    "floor_height_m": self.parameterAsDouble(parameters, self.FLOOR_HEIGHT, context),
-                    "floor_line_color": "#cbd5e1",
-                    "floor_line_width": 0.2,
-                }
-
-            if not apply_25d_style(out_layer, cfg):
-                raise QgsProcessingException("The 2.5D renderer could not style the output layer.")
-
-            qml_path = self.parameterAsString(parameters, self.OUTPUT_QML, context)
-            if qml_path:
-                export_layer_qml(out_layer, qml_path)
-                feedback.pushInfo(f"Exported QML style to: {qml_path}")
+        if preset_idx > 0 and preset_idx < len(self.PRESET_KEYS):
+            pkey = self.PRESET_KEYS[preset_idx]
+            cfg = dict(PRESETS[pkey])
+            cfg["height_field"] = h_field
+            cfg["height_multiplier"] = h_scale
+            cfg["default_height"] = default_height
+            cfg["render_mode"] = render_mode
         else:
-            feedback.reportError(
-                "Could not resolve the output layer for styling; the destination "
-                "was written but no symbology or QML was applied.",
-                fatalError=False,
-            )
+            cfg = {
+                "height_field": h_field,
+                "height_multiplier": h_scale,
+                "default_height": default_height,
+                "render_mode": render_mode,
+                "projection_angle": self.parameterAsDouble(parameters, self.PROJECTION_ANGLE, context),
+                "sun_azimuth": self.parameterAsDouble(parameters, self.SUN_AZIMUTH, context),
+                "shading_intensity": self.parameterAsDouble(parameters, self.SHADING_INTENSITY, context),
+                "wall_color": self.parameterAsColor(parameters, self.WALL_COLOR, context).name(),
+                "roof_color": self.parameterAsColor(parameters, self.ROOF_COLOR, context).name(),
+                "outline_color": self.parameterAsColor(parameters, self.OUTLINE_COLOR, context).name(),
+                "outline_width": 0.3,
+                "roof_outline_color": self.parameterAsColor(parameters, self.OUTLINE_COLOR, context).name(),
+                "roof_outline_width": 0.4,
+                "shadow_enabled": True,
+                "shadow_color": "#0f172a",
+                "shadow_alpha": 40,
+                "shadow_blur": 4.0,
+                "floor_bands_enabled": self.parameterAsBoolean(parameters, self.FLOOR_BANDS, context),
+                "floor_height_m": self.parameterAsDouble(parameters, self.FLOOR_HEIGHT, context),
+                "floor_line_color": "#cbd5e1",
+                "floor_line_width": 0.2,
+            }
+
+        # Fix the one data-dependent input, so the style is identical
+        # wherever it is applied: at load time and in the exported QML.
+        if not int(cfg.get("max_floors", 0) or 0):
+            floor_h = normalize_config(cfg)["floor_height_m"]
+            cfg["max_floors"] = max_floors_from_values(heights, h_field, floor_h, fallback_max=12)
+
+        # Style an empty template with the output's schema: proves the
+        # configuration works before the run finishes and is what the QML
+        # is written from, for temporary and file outputs alike.
+        template = QgsVectorLayer(
+            f"{QgsWkbTypes.displayString(source.wkbType())}?crs={source.sourceCrs().authid()}",
+            "2.5D style template", "memory")
+        template.dataProvider().addAttributes(source.fields().toList())
+        template.updateFields()
+        if not apply_25d_style(template, dict(cfg)):
+            raise QgsProcessingException("The 2.5D renderer could not build a style for this layer.")
+
+        qml_path = self.parameterAsString(parameters, self.OUTPUT_QML, context)
+        if qml_path:
+            if export_layer_qml(template, qml_path):
+                feedback.pushInfo(f"Exported QML style to: {qml_path}")
+            else:
+                feedback.reportError(f"Could not write the QML style to: {qml_path}", fatalError=False)
+
+        # The output is re-read from disk when QGIS loads it (Processing
+        # writes even "temporary" vector outputs as GeoPackage), so the
+        # style is applied to the loaded layer by a post-processor.
+        style_cfg = dict(cfg)
+        style_output(context, dest_id, lambda layer: apply_25d_style(layer, dict(style_cfg)), feedback)
 
         return {self.OUTPUT: dest_id}

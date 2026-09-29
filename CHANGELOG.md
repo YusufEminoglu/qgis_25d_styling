@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **The Processing algorithm never styled its output.** Vector destinations are
+  written to disk even as temporary outputs, so the layer it tried to style did
+  not exist during the run: every run logged "Could not resolve the output
+  layer", the result arrived unstyled, and the optional QML was never written.
+  The 2.5D style is now applied to the layer QGIS loads, and the QML is written
+  from a template styled with the same settings. Per-floor bands take the
+  maximum floor count from the input data during the run. The e2e suite now
+  runs the algorithm as temporary and GeoPackage output.
+
 ## [1.0.1] - 2026-09-06
 
 - Migrate repository and documentation URLs to GitLab and Cloudflare Pages.

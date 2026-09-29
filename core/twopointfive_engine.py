@@ -340,6 +340,37 @@ def floor_band_palette_color(floor_index: int, palette_key: str, wall: bool = Fa
     return col
 
 
+def max_floors_from_values(
+    values,
+    height_field: str,
+    default_floor_h: float = 3.0,
+    fallback_max: int = 12,
+) -> int:
+    """Maximum building floor count from raw height-field values.
+
+    A field whose name reads as a floor/level count is taken as floors;
+    otherwise values are heights in metres divided by the floor height.
+    Non-numeric values are ignored; nothing positive gives ``fallback_max``.
+    """
+    is_floor_field = any(tok in height_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
+    max_val = 0.0
+    for val in values:
+        if val is None:
+            continue
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            continue
+        if num == num and num > max_val:
+            max_val = num
+    if max_val <= 0:
+        return fallback_max
+    if is_floor_field:
+        return max(1, min(60, int(round(max_val))))
+    floors = int(round(max_val / max(0.5, default_floor_h)))
+    return max(1, min(60, floors))
+
+
 def estimate_layer_max_floors(
     layer: QgsVectorLayer,
     height_field: str,
@@ -355,24 +386,10 @@ def estimate_layer_max_floors(
     if idx < 0:
         return fallback_max
 
-    is_floor_field = any(tok in height_field.lower() for tok in ("level", "floor", "kat", "story", "storey"))
-
-    max_val = 0.0
+    values = []
     with contextlib.suppress(Exception):
-        for feat in layer.getFeatures():
-            val = feat.attribute(idx)
-            if val is not None:
-                num = float(val)
-                if num > max_val:
-                    max_val = num
-
-    if max_val <= 0:
-        return fallback_max
-
-    if is_floor_field:
-        return max(1, min(60, int(round(max_val))))
-    floors = int(round(max_val / max(0.5, default_floor_h)))
-    return max(1, min(60, floors))
+        values = [feat.attribute(idx) for feat in layer.getFeatures()]
+    return max_floors_from_values(values, height_field, default_floor_h, fallback_max)
 
 
 def apply_per_floor_bands_style(
