@@ -1,6 +1,65 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] - 2026-10-26
+
+### Fixed
+
+- **Shadows darkened neighbouring roofs.** Each building drew its own shadow
+  just before itself, so a building drawn later laid its shadow over roofs and
+  walls already on the map. Shadows now have their own first rendering pass;
+  buildings follow, back to front.
+- **Facade shading was one colour for every wall.** The shading term did not
+  depend on the wall, so the sun azimuth only shifted the colour of the whole
+  layer. Each facade is now shaded by its own orientation to the sun (lit
+  faces keep the material colour, faces turned away are darkened by the
+  shading depth).
+- **Floor lines showed through the front facade.** Whole footprint rings were
+  drawn at every floor, including the hidden back edges, which crossed the
+  visible walls of tall or narrow buildings. Floor lines, corner edges and
+  walls are now generated only for the edges that face the viewer.
+- **Native renderer on a geographic layer extruded in degrees.** A 9 m
+  building was pushed 9 degrees across the map. Heights are now converted to
+  the layer's units (degrees, feet or metres) in every renderer.
+- **Tall buildings detached from their shadow** and per-floor styles cut
+  buildings off at 60 floors; the shadow is now the footprint swept away from
+  the sun (exact for courtyards and L or U shapes) and the top floor band runs
+  to the real roof.
+- **OSM buildings mapped as multipolygon relations were dropped.** Courtyard
+  blocks, malls and stations are now assembled from their member ways, holes
+  included. Heights written with a decimal comma ("12,5") are read correctly.
+- A configured height field the layer does not have, or a field name with
+  quotes, broke the style; text fields with values such as "12 m" now fall
+  back to the missing-height value instead of failing.
+- The quick-angle buttons were mislabelled: 135 degrees was called SE but
+  leans buildings north-west. They now name the real direction, and the angle
+  control shows it as a compass point.
+- The dock left the tab pages short with an empty strip below them on tall
+  screens.
+- The Processing algorithm used the fallback height for every building when no
+  field was chosen, even when the layer had a `height` field.
+
+### Added
+
+- Height field unit: Auto (from the field name), Metres or Floors. Turkish
+  field names (`yukseklik`, `kat_sayisi`, `kat_adedi`, `bina_yuksekligi`) are
+  detected.
+- Shadow length control (as a share of building height).
+- Per-floor legend: one swatch per floor colour.
+- Diagnostics after every apply: how the height field was read, how many
+  buildings used the fallback, and the tallest building.
+- Processing parameters `HEIGHT_UNIT` and `FLOOR_PALETTE`.
+
+### Changed
+
+- Choosing a theme keeps the renderer you picked and, with live preview on,
+  applies at once.
+- Both geometry-generator styles are rule-based renderers with a "Ground
+  shadow" and a "Buildings" rule. Redrawing 20,000 synthetic buildings at full
+  extent on the release test machine: 6 s for the solid style and 17 s for
+  per-floor colours, against 61 s for QGIS's own 2.5D renderer. The solid
+  style is about 2.5 times slower than in 1.0.2, which drew no per-facade
+  shading or corner edges and ordered shadows wrongly.
+- OSM layers are MultiPolygon and `osm_id` reads `way/123` or `relation/456`.
 
 ## [1.0.2] - 2026-09-29
 

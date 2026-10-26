@@ -1,13 +1,13 @@
 [general]
 name=QGIS 2.5D Styling
-version=1.0.2
+version=1.1.0
 hasProcessingProvider=yes
 
 category=Vector
 tags=2.5d,buildings,osm,overpass,building levels,extrusion,shading,floor bands,qml,symbology,isometric
 
 description=Focused 2.5D building styler with OSM footprints, per-floor colors, 10 themes, three renderers, presets, and QML workflows.
-about=QGIS 2.5D Styling performs one focused task: producing publication-ready 2.5D building symbology. Use an existing polygon layer or explicitly download bounded OSM building footprints. OSM building:levels values drive floor counts; missing values use a visible, configurable three-floor default. The compact right dock provides three renderers, projection and material controls, 10 curated 02CartoLab-derived themes, 23 per-floor palettes (each theme's own matching gradient plus 13 standalone palettes), live preview, previous-style restoration, and QML import/export. A single Processing algorithm applies styling headlessly. No pip dependencies are required. Repository: https://github.com/YusufEminoglu/qgis_25d_styling
+about=QGIS 2.5D Styling performs one focused task: producing publication-ready 2.5D building symbology. Use an existing polygon layer or explicitly download bounded OSM building footprints. OSM building:levels values drive floor counts, and multipolygon building relations are assembled with their holes; missing values use a visible, configurable three-floor default. The compact right dock provides three renderers (facades shaded by their orientation to the sun, ground shadows drawn beneath every building, floor lines on visible facades), projection and material controls, 10 curated 02CartoLab-derived themes, 23 per-floor palettes (each theme's own matching gradient plus 13 standalone palettes), live preview, previous-style restoration, and QML import/export. A single Processing algorithm applies styling headlessly. No pip dependencies are required. Repository: https://github.com/YusufEminoglu/qgis_25d_styling
 
 homepage=https://geophilo.com/qgis_25d_styling/
 repository=https://gitlab.com/geophilo1/qgis_25d_styling
@@ -22,5 +22,6 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 
 changelog=
+    1.1.0 - Rebuilt the 2.5D renderers. Shadows are drawn in their own first pass, so they no longer darken neighbouring roofs, and buildings are drawn back to front. Every facade is shaded by its own orientation to the sun (it was one colour for all walls). Floor lines and corner edges are drawn only on visible facades. Native and geographic layers extrude in the right units instead of degrees. OSM multipolygon building relations are assembled with their holes. New height-unit choice (auto, metres, floors), Turkish field names, shadow length, per-floor legend, and corrected quick-angle labels.
     1.0.2 - Fixed the Processing algorithm never styling its output or writing its QML; the 2.5D style now reaches the loaded layer for temporary and file outputs. Repository links point at the geophilo1 GitLab namespace.
     1.0.0 - Compact right-dock 2.5D studio with bounded OSM buildings, building:levels support, configurable three-floor fallback, soft teal/yavru agzi default building colors and matching default floor gradient, 10 themes each with its own matching per-floor gradient, safe restore, and QML workflows.
