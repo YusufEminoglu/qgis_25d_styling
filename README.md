@@ -71,9 +71,9 @@ The dock is organized into five stages — OSM, Form, Light, Floors, and Themes 
 
 | Step | What you do |
 | --- | --- |
-| **1. Select a layer or download OSM** | Pick any polygon layer, or fetch OSM footprints for the current view. `building:levels` and `height` tags are extracted automatically. |
+| **1. Select a layer or download OSM** | Pick any polygon layer, or fetch OSM footprints for the current view. `building:levels` and `height` tags are extracted automatically. Choose whether the height field holds metres or floors, or let **Auto** read the field name. |
 | **2. Choose a renderer** | Geometry Generator for full control, Per-Floor Color Bands for floor-level gradients, or Native QGIS 2.5D. |
-| **3. Configure projection, materials &amp; lighting** | Set projection angle (0&ndash;359&deg;), facade/roof colors, outline, shading depth, shadow opacity, and story height. |
+| **3. Configure projection, materials &amp; lighting** | Set the direction roofs lean (shown as a compass point), facade/roof colours, outlines, sun direction, shading depth, shadow opacity and length, and story height. |
 | **4. Apply a theme or tune floor palettes** | Pick one of 10 themes, or any of 23 per-floor palettes with a live ten-floor swatch preview. |
 | **5. Apply, export QML, or restore** | Commit the renderer, export a QML style file for reuse, or restore the previous renderer non-destructively. |
 
@@ -81,9 +81,16 @@ The dock is organized into five stages — OSM, Form, Light, Floors, and Themes 
 
 | Renderer | What it gives you |
 | --- | --- |
-| **Geometry Generator** | Full facade, roof, drop-shadow and floor-division control built entirely from QGIS geometry expressions. Feature draw ordering paints taller buildings above shorter neighbours. |
-| **Per-Floor Color Bands** | A rule-based renderer that assigns a distinct colour to each floor level. 23 palettes, a live ten-floor swatch preview, and automatic or explicit floor limits. The default for OSM downloads. |
-| **Native QGIS 2.5D** | Delegates to QGIS's built-in `Qgs25DRenderer` through layer-scoped expression variables. Integrates with QGIS 3D views and respects global rendering settings. |
+| **Geometry Generator** | Facades, roof, ground shadow, corner edges and floor lines built from QGIS geometry expressions. Every facade is shaded by its own orientation to the sun. |
+| **Per-Floor Color Bands** | Every floor takes its colour from one of 23 palettes, with a legend key per floor colour, shading per facade, and automatic or explicit floor limits. The default for OSM downloads. |
+| **Native QGIS 2.5D** | Delegates to QGIS's built-in `Qgs25DRenderer` through layer-scoped expression variables. |
+
+How the two geometry-generator renderers draw:
+
+- **Shadows first, then buildings back to front.** All ground shadows are drawn in a first rendering pass, so a neighbour's shadow never darkens a roof; buildings are then drawn from the back of the view to the front, so a tower covers the low roof behind it.
+- **Only visible facades.** Walls, corner edges and floor lines are generated only for the edges that face the viewer, so hidden back edges never show through a facade.
+- **Real units.** Heights are converted to the layer's units, so footprints in a geographic CRS (degrees) or in feet extrude at the right height.
+- **Shadow shape.** The shadow is the footprint swept away from the sun; courtyards and L or U shapes get their exact swept outline.
 
 ## 10 Material Themes
 
@@ -117,37 +124,43 @@ The default building material is a soft teal facade (`#7fb8b0`) with a yavru a&#
 
 ## OSM Building Acquisition
 
-The OSM download is asynchronous, bounded to the current view or selected-layer extent, cached locally, and falls back between Overpass mirrors when a service is unavailable. It reprojects to a metric CRS automatically and records the floor source (`building:levels`, an estimated floor count from `height`, or the fallback default) in an auditable `levels_source` attribute.
+The OSM download is asynchronous, bounded to the current view or selected-layer extent, cached locally, and falls back between Overpass mirrors when a service is unavailable. Buildings mapped as multipolygon relations (courtyard blocks, malls, stations) are assembled from their member ways, holes included. The layer is reprojected to a metric UTM CRS and records the floor source (`building:levels`, an estimated floor count from `height`, or the fallback default) in an auditable `levels_source` attribute; `osm_id` reads `way/123` or `relation/456`.
 
 ## Processing
 
-`qgis_25d_styling:apply_25d_style` copies an input polygon layer to an output layer and applies the selected 2.5D renderer — no dock required.
+`qgis_25d_styling:apply_25d_style` copies an input polygon layer to an output layer and applies the selected 2.5D renderer — no dock required. The style reaches the loaded result for temporary and file outputs alike, and can also be written to a QML file.
 
 ```python
 import processing
 
-result = processing.run(
+result = processing.runAndLoadResults(
     "qgis_25d_styling:apply_25d_style",
     {
         "INPUT": buildings_layer,
-        "RENDERER_MODE": "geometry_generator",   # geometry_generator | per_floor_bands | native_25d
-        "THEME": "Night Copper",
-        "PROJECTION_ANGLE": 315,
-        "FACADE_COLOR": "#7fb8b0",
+        "RENDER_MODE": 0,          # 0 geometry generator, 1 per-floor colour bands, 2 native QGIS 2.5D
+        "PRESET": 0,               # 0 custom parameters, 1-10 the themes in the order listed above
+        "HEIGHT_FIELD": "building_levels",
+        "HEIGHT_UNIT": 0,          # 0 auto (from the field name), 1 metres, 2 floors
+        "PROJECTION_ANGLE": 45,    # direction roofs lean, anticlockwise from east
+        "SUN_AZIMUTH": 315,        # where the light comes from, clockwise from north
+        "WALL_COLOR": "#7fb8b0",
         "ROOF_COLOR": "#f7c3a1",
-        "FALLBACK_HEIGHT": 3,
-        "OUTPUT": "memory:",
+        "DEFAULT_HEIGHT": 9.0,     # metres, for buildings without a value
+        "OUTPUT_QML": "C:/styles/buildings_25d.qml",
+        "OUTPUT": "TEMPORARY_OUTPUT",
     },
 )
 ```
+
+Other parameters: `HEIGHT_SCALE`, `SHADING_INTENSITY`, `OUTLINE_COLOR`, `FLOOR_BANDS`, `FLOOR_HEIGHT` and `FLOOR_PALETTE`. When `HEIGHT_FIELD` is empty the algorithm uses a conventional field such as `height`, `building_levels`, `yukseklik` or `kat_sayisi` when the layer has one.
 
 ## Compatibility
 
 | Runtime | Status |
 | --- | --- |
 | QGIS 3.28+ | Minimum requirement. Full feature support across 3.x. |
-| QGIS 3.44 LTR | Primary release target &mdash; every version is verified on LTR before publishing. |
-| QGIS 4.2 | Qt6 / QGIS 4 verified. No deprecated API usage in the plugin codebase. |
+| QGIS 3.44 LTR | Primary release target &mdash; the end-to-end suite (including rendered-pixel checks) runs on LTR before publishing. |
+| QGIS 4.2 | Qt6 / QGIS 4: the same end-to-end suite runs headless on 4.2. |
 | Dependencies | Zero pip dependencies &mdash; pure QGIS API only. |
 | Network | Optional &mdash; used only when the user starts an OSM download. |
 
@@ -158,6 +171,7 @@ result = processing.run(
 | `main_plugin.py` | QGIS plugin lifecycle, action and dock wiring. |
 | `ui/styling_dock.py` | The compact right-dock studio: OSM, Form, Light, Floors, Themes. |
 | `core/twopointfive_engine.py` | The shared renderer contract: geometry-generator, per-floor-band, and native 2.5D styling. |
+| `core/heights.py` | How a height or floor field becomes a building height, shared by the renderers, the dock and Processing. |
 | `core/presets.py` | The 10 themes, 23 per-floor palettes, and six projection shortcuts. |
 | `core/osm_downloader.py` | Bounded Overpass download with cache, mirror fallback, and tag parsing. |
 | `core/config.py` | The normalized, bounded configuration shared by every renderer. |
@@ -182,11 +196,11 @@ This plugin is one of a family of open-source QGIS plugins for urban planning by
 
 | Planning &amp; analysis | CAD &amp; production | 3D &amp; visualization |
 |---|---|---|
-| [PlanX](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; drafting-grade CAD | [PlanX 3D City](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; Three.js city viewer |
-| [GeoStats Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatial statistics | [EasyFillet](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; tangent-arc fillet | [3D OSM Model](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; OSM &rarr; 3D city in browser |
-| [Suitability Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; raster MCDA | [Settlement Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; settlement plans | [OSM Quick 3D](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; OSM &rarr; native QGIS 3D |
-| [DataCube Lab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; spatiotemporal cubes | [UIP Toolset](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; master-plan automation | [CartoLab](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; publication cartography |
-| [Urban Resilience](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; resilience tools | [ParcelFlux](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; parcel subdivision | [Urban Procedural 3D](https://gitlab.com/geophilo1/qgis_25d_styling) &mdash; parametric zoning |
+| [PlanX](https://github.com/YusufEminoglu/PlanX) &mdash; spatial-planning suite | [PlanX CAD Toolset](https://github.com/YusufEminoglu/PlanX-CAD) &mdash; drafting-grade CAD | [PlanX 3D City](https://github.com/YusufEminoglu/planx_3d_city) &mdash; Three.js city viewer |
+| [GeoStats Lab](https://github.com/YusufEminoglu/planx_geostats) &mdash; spatial statistics | [EasyFillet](https://github.com/YusufEminoglu/EasyFillet) &mdash; tangent-arc fillet | [3D OSM Model](https://github.com/YusufEminoglu/osm_3d_model) &mdash; OSM &rarr; 3D city in browser |
+| [Suitability Lab](https://github.com/YusufEminoglu/planx_suitability_lab) &mdash; raster MCDA | [Settlement Toolset](https://github.com/YusufEminoglu/PlanX-Settlement) &mdash; settlement plans | [OSM Quick 3D](https://github.com/YusufEminoglu/osm_quick_3d) &mdash; OSM &rarr; native QGIS 3D |
+| [DataCube Lab](https://github.com/YusufEminoglu/planx_datacube) &mdash; spatiotemporal cubes | [UIP Toolset](https://github.com/YusufEminoglu/PlanX-UIP) &mdash; master-plan automation | [CartoLab](https://github.com/YusufEminoglu/zero2cartolab) &mdash; publication cartography |
+| [Urban Resilience](https://github.com/YusufEminoglu/planx_urban_resilience) &mdash; resilience tools | [ParcelFlux](https://github.com/YusufEminoglu/parcelflux) &mdash; parcel subdivision | [Urban Procedural 3D](https://github.com/YusufEminoglu/planx_urban_procedural_3d) &mdash; parametric zoning |
 
 ## Acknowledgements &amp; Inspiration
 
