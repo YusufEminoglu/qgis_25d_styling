@@ -6,8 +6,19 @@ from qgis_25d_styling.core.config import (
     DEFAULT_CONFIG,
     choose_height_field,
     compass_direction,
+    extrusion_compass,
     normalize_config,
 )
+from qgis_25d_styling.core.heights import (
+    MAX_SLABS,
+    field_kind,
+    floor_count_expression,
+    floor_count_value,
+    height_meters_expression,
+    height_meters_value,
+    slab_count,
+)
+from qgis_25d_styling.core.osm_downloader import parse_numeric_height, parse_numeric_levels, stitch_rings
 from qgis_25d_styling.core.presets import FLOOR_BAND_PALETTES, PRESETS, STANDARD_ANGLES
 from qgis_25d_styling.core.twopointfive_engine import build_height_expression
 
@@ -75,12 +86,107 @@ def test_angles_and_floor_palettes_are_release_ready():
     assert all(len(value["colors"]) >= 8 for value in FLOOR_BAND_PALETTES.values())
 
 
-def test_build_height_expression_distinguishes_height_levels_and_constant():
+def test_height_expressions_follow_the_field_kind():
     height = build_height_expression("height", multiplier=1.0, default_height=9.0)
-    levels = build_height_expression("building_levels", multiplier=1.5, default_height=12.0)
+    levels = build_height_expression("building_levels", multiplier=1.5, default_height=12.0, floor_height=3.0)
     constant = build_height_expression("", multiplier=2.0, default_height=7.0)
-    assert 'try("height")' in height
-    assert 'try("building_levels") * 3.0' in height
-    assert 'try("building_levels") * 3.0' in levels
-    assert "1.5000" in levels
-    assert constant == "(7.0 * 2.0000)"
+    # A metre field never borrows another column that may not exist.
+    assert '"height"' in height and "building_levels" not in height
+    assert '"building_levels"' in levels and "@h25_v * 3" in levels and "* 1.5" in levels
+    assert constant == "((7) * 2)"
+
+
+def test_height_expression_quotes_awkward_field_names():
+    expr = height_meters_expression('my "tall" field', "meters")
+    assert '"my ""tall"" field"' in expr
+
+
+def test_numeric_fields_are_read_without_text_conversion():
+    expr = floor_count_expression("kat_sayisi", numeric=True)
+    assert "to_real" not in expr and '"kat_sayisi" > 0' in expr
+    assert "to_real" in floor_count_expression("kat_sayisi", numeric=False)
+
+
+@pytest.mark.parametrize(
+    ("field", "unit", "kind"),
+    [
+        ("building_levels", "auto", "floors"),
+        ("KAT_SAYISI", "auto", "floors"),
+        ("height", "auto", "meters"),
+        ("yukseklik", "auto", "meters"),
+        ("height", "floors", "floors"),
+        ("levels", "meters", "meters"),
+        ("", "floors", "none"),
+    ],
+)
+def test_field_kind(field, unit, kind):
+    assert field_kind(field, unit) == kind
+
+
+def test_turkish_height_fields_are_detected():
+    assert choose_height_field(["id", "Kat_Sayisi"]) == "Kat_Sayisi"
+    assert choose_height_field(["id", "yukseklik", "kat_sayisi"]) == "yukseklik"
+
+
+def test_values_mirror_the_expressions():
+    cfg = {"floor_height_m": 3.0, "default_levels": 3, "default_height": 9.0}
+    assert height_meters_value(4, "floors", cfg) == pytest.approx(12.0)
+    assert height_meters_value(None, "floors", cfg) == pytest.approx(9.0)
+    assert height_meters_value("tall", "meters", cfg) == pytest.approx(9.0)
+    assert height_meters_value(-5, "meters", cfg) == pytest.approx(9.0)
+    # QGIS rounds halves away from zero.
+    assert floor_count_value(2.5, "floors", cfg) == 3
+    assert floor_count_value(7.4, "meters", cfg) == 2
+    assert floor_count_value(0.2, "floors", cfg) == 1
+    assert floor_count_value(None, "meters", cfg) == 3
+
+
+def test_slab_count_reaches_the_tallest_building():
+    cfg = {"height_field": "building_levels", "floor_height_m": 3.2, "default_levels": 3}
+    assert slab_count([2, None, 7, "x"], cfg, per_floor=True) == 7
+    assert slab_count([250], cfg, per_floor=True) == MAX_SLABS
+    assert slab_count([], cfg, per_floor=True) == 3
+    assert slab_count([2, 9], dict(cfg, max_floors=4), per_floor=True) == 4
+    metres = {"height_field": "height", "floor_height_m": 3.0, "default_height": 9.0}
+    assert slab_count([10.0, 2.0], metres, per_floor=False) == 4
+
+
+@pytest.mark.parametrize(
+    ("angle", "label"),
+    [(0, "E"), (45, "NE"), (90, "N"), (135, "NW"), (225, "SW"), (315, "SE")],
+)
+def test_extrusion_compass_uses_the_qgis_angle_convention(angle, label):
+    assert extrusion_compass(angle) == label
+
+
+def test_quick_angle_labels_name_the_real_direction():
+    for name, value in STANDARD_ANGLES:
+        assert extrusion_compass(value) in name.split("(")[0], name
+
+
+def test_normalize_config_bounds_new_keys():
+    cfg = normalize_config({"height_unit": "furlongs", "shadow_length": 99})
+    assert cfg["height_unit"] == "auto"
+    assert cfg["shadow_length"] == pytest.approx(3.0)
+
+
+def test_osm_numbers_accept_decimal_commas_and_feet():
+    assert parse_numeric_height("12,5 m") == pytest.approx(12.5)
+    assert parse_numeric_height("40 ft") == pytest.approx(12.192)
+    assert parse_numeric_levels("4,5") == pytest.approx(4.5)
+    assert parse_numeric_height("roof") is None
+
+
+def test_stitch_rings_joins_split_and_reversed_ways():
+    a = [(0, 0), (1, 0), (1, 1)]
+    b = [(0, 1), (1, 1)]          # reversed relative to the ring
+    c = [(0, 1), (0, 0)]
+    rings = stitch_rings([a, b, c])
+    assert len(rings) == 1
+    ring = rings[0]
+    assert ring[0] == ring[-1] and len(ring) == 5
+    assert set(ring) == {(0, 0), (1, 0), (1, 1), (0, 1)}
+
+
+def test_stitch_rings_drops_open_lines():
+    assert stitch_rings([[(0, 0), (1, 0), (2, 0)]]) == []

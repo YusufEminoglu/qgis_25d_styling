@@ -20,7 +20,7 @@ from qgis.core import (
 )
 from qgis.gui import QgsDoubleSpinBox, QgsFieldComboBox, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import QSettings, Qt, QTimer
-from qgis.PyQt.QtGui import QColor, QPixmap
+from qgis.PyQt.QtGui import QPixmap
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -43,11 +43,11 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ..core.config import choose_height_field, compass_direction, normalize_config
+from ..core.config import choose_height_field, compass_direction, extrusion_compass, normalize_config
 from ..core.osm_downloader import build_overpass_building_query, fetch_overpass_json, osm_json_to_vector_layer
 from ..core.presets import FLOOR_BAND_PALETTES, PRESETS, STANDARD_ANGLES
 from ..core.qml_exporter import export_layer_qml, load_layer_qml
-from ..core.twopointfive_engine import apply_25d_style
+from ..core.twopointfive_engine import apply_25d_style, describe_layer_heights
 from .color_button import ColorPickerButton
 
 
@@ -84,7 +84,6 @@ class StylingDockWidget(QDockWidget):
         self.setAllowedAreas(right)
         self.setMinimumWidth(340)
         self.setMaximumWidth(480)
-        self.setMaximumHeight(790)
         self.setObjectName("Qgis25DStylingDock")
 
         self._updating_controls = False
@@ -175,13 +174,28 @@ class StylingDockWidget(QDockWidget):
         self.cb_height_field.setFilters(QgsFieldProxyModel.Numeric)
         self.cb_height_field.setAllowEmptyFieldName(True)
         self.cb_height_field.setAccessibleName("Building height field")
-        source_form.addRow("Height / floors", self.cb_height_field)
+        self.cb_height_unit = QComboBox()
+        self.cb_height_unit.addItem("Auto", "auto")
+        self.cb_height_unit.addItem("Metres", "meters")
+        self.cb_height_unit.addItem("Floors", "floors")
+        self.cb_height_unit.setToolTip(
+            "What the field holds. Auto reads the name: level, floor, storey or kat "
+            "means a floor count, anything else metres."
+        )
+        self.cb_height_unit.setAccessibleName("Height field unit")
+        field_row = QHBoxLayout()
+        field_row.addWidget(self.cb_height_field, 1)
+        field_row.addWidget(self.cb_height_unit)
+        source_form.addRow("Height / floors", field_row)
 
         self.sp_default_levels = QSpinBox()
         self.sp_default_levels.setRange(1, 100)
         self.sp_default_levels.setValue(3)
         self.sp_default_levels.setSuffix(" floors")
-        self.sp_default_levels.setToolTip("Used when building:levels or the selected floor field is missing")
+        self.sp_default_levels.setToolTip(
+            "Floors given to a building whose floor value is missing (per-floor colours, "
+            "and floor fields in every renderer)"
+        )
         source_form.addRow("Missing levels", self.sp_default_levels)
 
         height_row = QHBoxLayout()
@@ -197,7 +211,9 @@ class StylingDockWidget(QDockWidget):
         self.sp_multiplier.setPrefix("x ")
         height_row.addWidget(self.sp_default_height)
         height_row.addWidget(self.sp_multiplier)
-        source_form.addRow("Fallback / scale", height_row)
+        self.sp_default_height.setToolTip("Height given to a building whose metre value is missing, or to every building when no field is chosen")
+        self.sp_multiplier.setToolTip("Exaggerate or flatten every height")
+        source_form.addRow("Missing height / scale", height_row)
         root.addWidget(source)
 
         self.tabs = QTabWidget()
@@ -208,8 +224,9 @@ class StylingDockWidget(QDockWidget):
         self.tabs.addTab(self._build_lighting_tab(), "Light")
         self.tabs.addTab(self._build_surface_tab(), "Floors")
         self.tabs.addTab(self._build_presets_tab(), "Themes")
-        root.addWidget(self.tabs)
-        root.addStretch(1)
+        # The tab pages take the spare height, so a tall dock shows a whole
+        # page instead of a scrolled one above an empty strip.
+        root.addWidget(self.tabs, 1)
 
         self.lbl_diagnostics = QLabel()
         self.lbl_diagnostics.setWordWrap(True)
@@ -302,7 +319,10 @@ class StylingDockWidget(QDockWidget):
         self.sp_angle = QSpinBox()
         self.sp_angle.setRange(0, 359)
         self.sp_angle.setValue(45)
-        self.sp_angle.setSuffix(" deg")
+        self.sp_angle.setSuffix(" deg NE")
+        self.sp_angle.setToolTip(
+            "Direction the roofs lean, anticlockwise from east as in QGIS's own 2.5D renderer"
+        )
         angle_row.addWidget(self.slider_angle, 2)
         angle_row.addWidget(self.sp_angle)
         angle_form.addRow("Direction", angle_row)
@@ -311,7 +331,7 @@ class StylingDockWidget(QDockWidget):
         for index, (name, value) in enumerate(STANDARD_ANGLES):
             label = name.split("(", 1)[0].strip()
             button = QPushButton(label)
-            button.setToolTip(f"Set projection to {int(value)} degrees")
+            button.setToolTip(f"Lean roofs toward {extrusion_compass(value)} ({int(value)} degrees)")
             button.clicked.connect(lambda _checked=False, v=int(value): self.sp_angle.setValue(v))
             quick_grid.addWidget(button, index // 2, index % 2)
         angle_form.addRow("Quick angles", quick_grid)
@@ -335,7 +355,7 @@ class StylingDockWidget(QDockWidget):
         self.sp_sun_azimuth.setValue(315)
         sun_row.addWidget(self.slider_sun_azimuth, 2)
         sun_row.addWidget(self.sp_sun_azimuth)
-        azimuth_tip = "Native renderer has no directional control; only used in advanced modes"
+        azimuth_tip = "Direction the light comes from, clockwise from north. The native renderer has no sun control."
         self.slider_sun_azimuth.setToolTip(azimuth_tip)
         self.sp_sun_azimuth.setToolTip(azimuth_tip)
         sun_form.addRow("Azimuth", sun_row)
@@ -348,7 +368,7 @@ class StylingDockWidget(QDockWidget):
         shade_row.addWidget(self.slider_shading_intensity)
         shade_row.addWidget(self.lbl_shading_value)
         self.slider_shading_intensity.setToolTip(
-            "Native renderer only supports on/off shading; depth only applies in advanced modes"
+            "How much darker a facade turned away from the sun gets. The native renderer only switches shading on or off."
         )
         sun_form.addRow("Depth", shade_row)
         self._shading_controls = [self.slider_sun_azimuth, self.sp_sun_azimuth, self.slider_shading_intensity]
@@ -374,9 +394,16 @@ class StylingDockWidget(QDockWidget):
         self.sp_shadow_blur.setRange(0.0, 50.0)
         self.sp_shadow_blur.setValue(4.0)
         self.sp_shadow_blur.setSuffix(" map units")
-        self.sp_shadow_blur.setToolTip("Native renderer shadow spread; retained as style metadata in advanced modes")
+        self.sp_shadow_blur.setToolTip("Blur of the native renderer's shadow")
         shadow_form.addRow("Spread", self.sp_shadow_blur)
-        self._shadow_controls = [self.btn_shadow_color, self.slider_shadow_alpha, self.sp_shadow_blur]
+        self.sp_shadow_length = QgsDoubleSpinBox()
+        self.sp_shadow_length.setRange(0.05, 3.0)
+        self.sp_shadow_length.setSingleStep(0.05)
+        self.sp_shadow_length.setValue(0.6)
+        self.sp_shadow_length.setSuffix(" x height")
+        self.sp_shadow_length.setToolTip("Shadow length as a share of building height (0.6 is a high afternoon sun)")
+        shadow_form.addRow("Length", self.sp_shadow_length)
+        self._shadow_controls = [self.btn_shadow_color, self.slider_shadow_alpha, self.sp_shadow_blur, self.sp_shadow_length]
         layout.addWidget(shadow_box)
         layout.addStretch()
         return page
@@ -475,7 +502,7 @@ class StylingDockWidget(QDockWidget):
         self.lbl_preset_description = QLabel()
         self.lbl_preset_description.setWordWrap(True)
         layout.addWidget(self.lbl_preset_description)
-        self.btn_apply_preset = QPushButton("Use preset")
+        self.btn_apply_preset = QPushButton("Use theme")
         self.btn_apply_preset.setIcon(_standard_icon(self, "SP_CommandLink"))
         layout.addWidget(self.btn_apply_preset)
         layout.addStretch()
@@ -485,6 +512,8 @@ class StylingDockWidget(QDockWidget):
     def _connect_signals(self) -> None:
         self.cb_layer.layerChanged.connect(self._on_layer_changed)
         self.cb_height_field.fieldChanged.connect(self._schedule_auto_apply)
+        self.cb_height_unit.currentIndexChanged.connect(self._schedule_auto_apply)
+        self.sp_angle.valueChanged.connect(self._update_angle_label)
         self.btn_download_osm.clicked.connect(self.download_osm_buildings)
         self.btn_cancel_osm.clicked.connect(self.cancel_download)
         self.btn_apply.clicked.connect(self.apply_current_style)
@@ -493,6 +522,7 @@ class StylingDockWidget(QDockWidget):
         self.btn_export_qml.clicked.connect(self.export_qml)
         self.btn_apply_preset.clicked.connect(self.apply_selected_preset)
         self.cb_preset.currentIndexChanged.connect(self._update_preset_summary)
+        self.cb_preset.activated.connect(self._preview_preset)
         self.cb_floor_palette.currentIndexChanged.connect(self._update_floor_palette_preview)
         self.tabs.currentChanged.connect(self._save_settings)
         self.chk_auto_apply.toggled.connect(self._save_settings)
@@ -513,7 +543,7 @@ class StylingDockWidget(QDockWidget):
         controls = [
             self.sp_default_height, self.sp_default_levels, self.sp_multiplier, self.cb_render_engine, self.sp_angle,
             self.chk_facade_shading, self.sp_sun_azimuth, self.slider_shading_intensity,
-            self.chk_shadow, self.slider_shadow_alpha, self.sp_shadow_blur,
+            self.chk_shadow, self.slider_shadow_alpha, self.sp_shadow_blur, self.sp_shadow_length,
             self.sp_outline_width, self.sp_roof_outline_width, self.chk_floor_bands,
             self.sp_band_height, self.sp_floor_line_w, self.cb_floor_palette, self.sp_max_floors,
         ]
@@ -556,10 +586,11 @@ class StylingDockWidget(QDockWidget):
                 self.cb_height_field.setField(selected)
             finally:
                 self._updating_controls = False
-        self.lbl_state.setText(f"{layer.featureCount():,} features")
+        count = layer.featureCount()
+        self.lbl_state.setText(f"{count:,} feature" if count == 1 else f"{count:,} features")
         crs_label = layer.crs().authid() or "Unknown CRS"
         units = "geographic" if layer.crs().isGeographic() else "projected"
-        field_label = selected or "constant fallback height"
+        field_label = selected or "none, every building gets the missing height"
         warning = " Reproject to a metric CRS for consistent height." if layer.crs().isGeographic() else ""
         self.lbl_diagnostics.setText(f"{crs_label} ({units}) | Height: {field_label}.{warning}")
 
@@ -569,6 +600,8 @@ class StylingDockWidget(QDockWidget):
             widget.setEnabled(advanced and self.chk_facade_shading.isChecked())
         for widget in self._shadow_controls:
             widget.setEnabled(self.chk_shadow.isChecked())
+        self.sp_shadow_blur.setEnabled(self.chk_shadow.isChecked() and not advanced)
+        self.sp_shadow_length.setEnabled(self.chk_shadow.isChecked() and advanced)
         self.chk_floor_bands.setEnabled(advanced)
         for widget in self._floor_controls:
             widget.setEnabled(advanced and self.chk_floor_bands.isChecked())
@@ -579,6 +612,10 @@ class StylingDockWidget(QDockWidget):
 
     def _update_direction_label(self, *_args) -> None:
         self.sp_sun_azimuth.setSuffix(f" deg {compass_direction(self.sp_sun_azimuth.value())}")
+        self._update_angle_label()
+
+    def _update_angle_label(self, *_args) -> None:
+        self.sp_angle.setSuffix(f" deg {extrusion_compass(self.sp_angle.value())}")
 
     def _update_preset_summary(self, *_args) -> None:
         key = self.cb_preset.currentData() if hasattr(self, "cb_preset") else None
@@ -618,6 +655,7 @@ class StylingDockWidget(QDockWidget):
     def get_current_config(self) -> Dict[str, Any]:
         return normalize_config({
             "height_field": self.cb_height_field.currentField(),
+            "height_unit": self.cb_height_unit.currentData(),
             "height_multiplier": self.sp_multiplier.value(),
             "default_height": self.sp_default_height.value(),
             "default_levels": self.sp_default_levels.value(),
@@ -636,6 +674,7 @@ class StylingDockWidget(QDockWidget):
             "shadow_color": self.btn_shadow_color.color().name(),
             "shadow_alpha": self.slider_shadow_alpha.value(),
             "shadow_blur": self.sp_shadow_blur.value(),
+            "shadow_length": self.sp_shadow_length.value(),
             "floor_bands_enabled": self.chk_floor_bands.isChecked(),
             "floor_height_m": self.sp_band_height.value(),
             "floor_line_color": self.btn_floor_line_col.color().name(),
@@ -652,6 +691,7 @@ class StylingDockWidget(QDockWidget):
             self.cb_render_engine.setCurrentIndex(max(0, mode_index))
             if cfg["height_field"]:
                 self.cb_height_field.setField(cfg["height_field"])
+            self.cb_height_unit.setCurrentIndex(max(0, self.cb_height_unit.findData(cfg["height_unit"])))
             self.sp_multiplier.setValue(cfg["height_multiplier"])
             self.sp_default_height.setValue(cfg["default_height"])
             self.sp_default_levels.setValue(cfg["default_levels"])
@@ -669,6 +709,7 @@ class StylingDockWidget(QDockWidget):
             self.btn_shadow_color.setColor(cfg["shadow_color"])
             self.slider_shadow_alpha.setValue(cfg["shadow_alpha"])
             self.sp_shadow_blur.setValue(cfg["shadow_blur"])
+            self.sp_shadow_length.setValue(cfg["shadow_length"])
             self.chk_floor_bands.setChecked(cfg["floor_bands_enabled"])
             self.sp_band_height.setValue(cfg["floor_height_m"])
             self.btn_floor_line_col.setColor(cfg["floor_line_color"])
@@ -815,6 +856,7 @@ class StylingDockWidget(QDockWidget):
             if self.iface and self.iface.mapCanvas():
                 self.iface.mapCanvas().refresh()
             self.lbl_apply_status.setText("Preview applied" if automatic else "Style applied")
+            self._update_height_diagnostics(layer)
             self._save_settings()
         except Exception as exc:
             self.lbl_apply_status.setText("Apply failed")
@@ -824,6 +866,21 @@ class StylingDockWidget(QDockWidget):
                 self.iface.messageBar().pushWarning("2.5D Styling", str(exc))
         finally:
             self.btn_apply.setEnabled(True)
+
+    def _update_height_diagnostics(self, layer) -> None:
+        if layer.featureCount() > 200000:
+            return
+        cfg = self.get_current_config()
+        count, fallback, tallest, kind = describe_layer_heights(layer, cfg)
+        if kind == "none":
+            source = f"no height field, every building {cfg['default_height']:g} m"
+        else:
+            unit = "floors" if kind == "floors" else "metres"
+            source = f"{cfg['height_field']} read as {unit}"
+            if fallback:
+                source += f"; {fallback:,} of {count:,} missing, given the fallback"
+        geographic = " Reproject to a metric CRS for even heights." if layer.crs().isGeographic() else ""
+        self.lbl_diagnostics.setText(f"Heights: {source}. Tallest {tallest:,.1f} m.{geographic}")
 
     def restore_previous_style(self) -> None:
         layer = self.cb_layer.currentLayer()
@@ -843,13 +900,17 @@ class StylingDockWidget(QDockWidget):
         if key not in PRESETS:
             return
         current = self.get_current_config()
-        current.update(PRESETS[key])
+        current.update({name: value for name, value in PRESETS[key].items() if name != "render_mode"})
         current["height_field"] = self.cb_height_field.currentField()
         current["height_multiplier"] = self.sp_multiplier.value()
         current["default_height"] = self.sp_default_height.value()
         self.load_config_into_ui(current)
         self.apply_current_style()
         self.lbl_apply_status.setText(f"Preset applied: {PRESETS[key]['name']}")
+
+    def _preview_preset(self, *_args) -> None:
+        if self.chk_auto_apply.isChecked() and self._is_polygon_layer(self.cb_layer.currentLayer()):
+            self.apply_selected_preset()
 
     def import_qml(self) -> None:
         layer = self.cb_layer.currentLayer()

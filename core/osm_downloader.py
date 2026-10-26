@@ -19,6 +19,7 @@ try:
     from qgis.core import (
         QgsCoordinateReferenceSystem,
         QgsCoordinateTransform,
+        QgsCsException,
         QgsFeature,
         QgsField,
         QgsFields,
@@ -33,6 +34,7 @@ try:
 except ImportError:
     QgsCoordinateReferenceSystem = None
     QgsCoordinateTransform = None
+    QgsCsException = Exception
     QgsFeature = None
     QgsField = None
     QgsFields = None
@@ -49,7 +51,7 @@ OVERPASS_ENDPOINTS = (
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
 )
-USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.0.2 (https://github.com/YusufEminoglu/qgis_25d_styling)"
+USER_AGENT = "QGIS-2.5D-Styling-Plugin/1.1.0 (https://github.com/YusufEminoglu/qgis_25d_styling)"
 DEFAULT_TIMEOUT_S = 60
 CACHE_TTL_S = 7 * 24 * 3600  # 1 week cache
 
@@ -106,12 +108,14 @@ def build_overpass_building_query(
 
 
 def parse_numeric_height(val: Any) -> Optional[float]:
-    """Parse raw OSM height string (e.g. '12.5 m', '14', '15.2m') into float meters."""
+    """Parse raw OSM height string (e.g. '12.5 m', '14', '15,2m', '40 ft') into float meters."""
     if val is None:
         return None
     s = str(val).strip().lower()
     if not s:
         return None
+    # A decimal comma ("12,5") is common in hand-entered European values.
+    s = re.sub(r"^([0-9]+),([0-9]+)", r"\1.\2", s)
     # match float prefix
     match = re.match(r"^([0-9]+(?:\.[0-9]+)?)", s)
     if match:
@@ -128,7 +132,7 @@ def parse_numeric_levels(val: Any) -> Optional[float]:
     """Parse building:levels value to float."""
     if val is None:
         return None
-    s = str(val).strip()
+    s = re.sub(r"^([0-9]+),([0-9]+)", r"\1.\2", str(val).strip())
     match = re.match(r"^([0-9]+(?:\.[0-9]+)?)", s)
     if match:
         with contextlib.suppress(ValueError):
@@ -147,6 +151,7 @@ def fetch_overpass_json(
         return cached
 
     encoded = urllib.parse.urlencode({"data": query}).encode("utf-8")
+    last_error = "no Overpass mirror answered"
     for endpoint in OVERPASS_ENDPOINTS:
         if feedback and feedback.isCanceled():
             raise OsmDownloadError("Download canceled by user.")
@@ -184,6 +189,80 @@ def fetch_overpass_json(
     raise OsmDownloadError(f"All Overpass mirrors failed. Last error: {last_error}")
 
 
+Coord = Tuple[float, float]
+
+
+def stitch_rings(ways: List[List[Coord]]) -> List[List[Coord]]:
+    """Join way coordinate lists that share end nodes into closed rings.
+
+    A multipolygon relation may split one outline over several ways, in any
+    direction. Lists that cannot be closed are dropped rather than guessed.
+    """
+    pending = [list(way) for way in ways if len(way) >= 2]
+    rings: List[List[Coord]] = []
+    while pending:
+        ring = pending.pop(0)
+        joined = True
+        while ring[0] != ring[-1] and joined:
+            joined = False
+            for index, way in enumerate(pending):
+                if way[0] == ring[-1]:
+                    ring = ring + way[1:]
+                elif way[-1] == ring[-1]:
+                    ring = ring + way[-2::-1]
+                elif way[-1] == ring[0]:
+                    ring = way + ring[1:]
+                elif way[0] == ring[0]:
+                    ring = way[::-1] + ring[1:]
+                else:
+                    continue
+                pending.pop(index)
+                joined = True
+                break
+        if len(ring) >= 4 and ring[0] == ring[-1]:
+            rings.append(ring)
+    return rings
+
+
+def _coords(raw: List[Dict[str, Any]]) -> List[Coord]:
+    return [(float(pt["lon"]), float(pt["lat"])) for pt in raw if "lon" in pt and "lat" in pt]
+
+
+def _element_geometry(el: Dict[str, Any]):
+    """WGS84 polygon of a building way or multipolygon relation, or None."""
+    if el.get("type") == "relation":
+        members = [m for m in el.get("members", []) if m.get("type") == "way" and m.get("geometry")]
+        outers = stitch_rings([_coords(m["geometry"]) for m in members if m.get("role", "outer") in ("outer", "")])
+        inners = stitch_rings([_coords(m["geometry"]) for m in members if m.get("role") == "inner"])
+        if not outers:
+            return None
+        polygons = []
+        for outer in outers:
+            shell = QgsGeometry.fromPolygonXY([[QgsPointXY(x, y) for x, y in outer]])
+            holes = [
+                [QgsPointXY(x, y) for x, y in inner] for inner in inners
+                if shell.contains(QgsGeometry.fromPointXY(QgsPointXY(*inner[0])))
+            ]
+            polygons.append([[QgsPointXY(x, y) for x, y in outer]] + holes)
+        if len(polygons) == 1:
+            return QgsGeometry.fromPolygonXY(polygons[0])
+        return QgsGeometry.fromMultiPolygonXY(polygons)
+    points = _coords(el.get("geometry", []))
+    if len(points) < 3:
+        return None
+    if points[0] != points[-1]:
+        points.append(points[0])
+    return QgsGeometry.fromPolygonXY([[QgsPointXY(x, y) for x, y in points]])
+
+
+def _project(geometry, transform) -> bool:
+    try:
+        geometry.transform(transform)
+    except QgsCsException:
+        return False
+    return True
+
+
 def utm_crs_for_lon_lat(lon: float, lat: float) -> QgsCoordinateReferenceSystem:
     """Return appropriate metric UTM CRS (EPSG:326xx or EPSG:327xx) for a coordinate."""
     zone = int(math.floor((lon + 180.0) / 6.0)) + 1
@@ -211,8 +290,10 @@ def osm_json_to_vector_layer(
         # find centroid lon/lat
         sample_lon, sample_lat = 0.0, 0.0
         for el in elements:
-            geom = el.get("geometry", [])
-            if geom and len(geom) > 0:
+            geom = el.get("geometry") or next(
+                (m.get("geometry") for m in el.get("members", []) if m.get("geometry")), None
+            )
+            if geom:
                 sample_lon = geom[0].get("lon", 0.0)
                 sample_lat = geom[0].get("lat", 0.0)
                 break
@@ -238,7 +319,7 @@ def osm_json_to_vector_layer(
     fields.append(QgsField("amenity", QVariant.String))
 
     layer = QgsVectorLayer(
-        f"Polygon?crs={target_crs.authid()}", layer_name, "memory"
+        f"MultiPolygon?crs={target_crs.authid()}", layer_name, "memory"
     )
     pr = layer.dataProvider()
     pr.addAttributes(list(fields))
@@ -247,31 +328,20 @@ def osm_json_to_vector_layer(
     features_to_add = []
 
     for el in elements:
-        el_type = el.get("type")
         tags = el.get("tags", {})
         if not tags or "building" not in tags:
             continue
 
-        raw_geom = el.get("geometry", [])
-        if not raw_geom or len(raw_geom) < 3:
+        qgs_geom = _element_geometry(el)
+        if qgs_geom is None or qgs_geom.isEmpty():
             continue
-
-        # Build Polygon Ring in WGS84
-        pts = [QgsPointXY(pt["lon"], pt["lat"]) for pt in raw_geom]
-        # ensure closed
-        if pts[0] != pts[-1]:
-            pts.append(pts[0])
-
-        qgs_geom = QgsGeometry.fromPolygonXY([pts])
-        if not qgs_geom or qgs_geom.isEmpty():
+        # A footprint that cannot be projected would land in the wrong CRS.
+        if not _project(qgs_geom, transform):
             continue
-
-        # Transform to metric CRS
-        with contextlib.suppress(Exception):
-            qgs_geom.transform(transform)
+        qgs_geom.convertToMultiType()
 
         # Attribute Parsing & Height Estimation
-        osm_id = str(el.get("id", ""))
+        osm_id = f"{el.get('type', 'way')}/{el.get('id', '')}"
         name = str(tags.get("name", ""))
         b_type = str(tags.get("building", "yes"))
         raw_levels = tags.get("building:levels")

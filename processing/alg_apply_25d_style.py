@@ -21,10 +21,11 @@ from qgis.core import (
     QgsWkbTypes,
 )
 
-from ..core.presets import PRESETS
+from ..core.config import DEFAULT_CONFIG, choose_height_field
+from ..core.heights import slab_count
+from ..core.presets import FLOOR_BAND_PALETTES, PRESETS
 from ..core.qml_exporter import export_layer_qml
-from ..core.config import normalize_config
-from ..core.twopointfive_engine import apply_25d_style, max_floors_from_values
+from ..core.twopointfive_engine import apply_25d_style
 from ._styling import style_output
 
 
@@ -34,6 +35,8 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
     INPUT = "INPUT"
     PRESET = "PRESET"
     HEIGHT_FIELD = "HEIGHT_FIELD"
+    HEIGHT_UNIT = "HEIGHT_UNIT"
+    FLOOR_PALETTE = "FLOOR_PALETTE"
     HEIGHT_SCALE = "HEIGHT_SCALE"
     DEFAULT_HEIGHT = "DEFAULT_HEIGHT"
     RENDER_MODE = "RENDER_MODE"
@@ -52,6 +55,9 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
     PRESET_NAMES = ["Custom Parameters"] + [p["name"] for p in PRESETS.values()]
     RENDER_MODE_KEYS = ["geometry_generator", "per_floor_bands", "native"]
     RENDER_MODE_NAMES = ["Geometry generator", "Per-floor color bands", "Native QGIS 2.5D"]
+    HEIGHT_UNIT_KEYS = ["auto", "meters", "floors"]
+    HEIGHT_UNIT_NAMES = ["Auto (from the field name)", "Metres", "Floors"]
+    PALETTE_KEYS = list(FLOOR_BAND_PALETTES.keys())
 
     def createInstance(self):
         return Apply25DStyleAlgorithm()
@@ -70,10 +76,13 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return (
-            "Applies publication-grade 2.5D building extrusion, solar aspect lighting, "
-            "and architectural floor bands to any polygon vector layer.\n\n"
-            "Choose Custom Parameters to use the individual controls, or select a preset as a "
-            "complete material and lighting template. The input features are copied to a styled output layer."
+            "Copies a polygon layer and styles the copy as 2.5D buildings: facades shaded by "
+            "their orientation to the sun, a ground shadow, floor lines and a roof.\n\n"
+            "Height field: a number of floors or a height in metres. Auto decides from the "
+            "field name (level, floor, storey or kat means floors). Buildings with no value use "
+            "the fallback height. Without a field every building gets the fallback height.\n\n"
+            "Choose Custom Parameters to use the individual controls, or a theme as a complete "
+            "material and lighting template; the renderer, height and palette settings apply either way."
         )
 
     def initAlgorithm(self, config=None):
@@ -105,6 +114,14 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 parentLayerParameterName=self.INPUT,
                 type=QgsProcessingParameterField.Numeric,
                 optional=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.HEIGHT_UNIT,
+                "Height Field Holds",
+                options=self.HEIGHT_UNIT_NAMES,
+                defaultValue=0,
             )
         )
         self.addParameter(
@@ -188,6 +205,14 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             )
         )
         self.addParameter(
+            QgsProcessingParameterEnum(
+                self.FLOOR_PALETTE,
+                "Per-floor Palette (per-floor renderer)",
+                options=[FLOOR_BAND_PALETTES[key]["name"] for key in self.PALETTE_KEYS],
+                defaultValue=self.PALETTE_KEYS.index(DEFAULT_CONFIG["floor_palette"]),
+            )
+        )
+        self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_QML,
                 "Optional Export QML Style File",
@@ -218,7 +243,14 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException("Could not create the styled output layer.")
 
         preset_idx = self.parameterAsEnum(parameters, self.PRESET, context)
-        h_field = self.parameterAsString(parameters, self.HEIGHT_FIELD, context) or "height"
+        # No field chosen: take a conventional one when the layer has it.
+        h_field = (
+            self.parameterAsString(parameters, self.HEIGHT_FIELD, context)
+            or choose_height_field(source.fields().names())
+        )
+        unit_idx = self.parameterAsEnum(parameters, self.HEIGHT_UNIT, context)
+        h_unit = self.HEIGHT_UNIT_KEYS[unit_idx] if 0 <= unit_idx < len(self.HEIGHT_UNIT_KEYS) else "auto"
+        palette_idx = self.parameterAsEnum(parameters, self.FLOOR_PALETTE, context)
         h_scale = self.parameterAsDouble(parameters, self.HEIGHT_SCALE, context)
         default_height = self.parameterAsDouble(parameters, self.DEFAULT_HEIGHT, context)
         mode_idx = self.parameterAsEnum(parameters, self.RENDER_MODE, context)
@@ -243,12 +275,16 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             pkey = self.PRESET_KEYS[preset_idx]
             cfg = dict(PRESETS[pkey])
             cfg["height_field"] = h_field
+            cfg["height_unit"] = h_unit
             cfg["height_multiplier"] = h_scale
             cfg["default_height"] = default_height
             cfg["render_mode"] = render_mode
         else:
             cfg = {
                 "height_field": h_field,
+                "height_unit": h_unit,
+                "floor_palette": self.PALETTE_KEYS[palette_idx]
+                if 0 <= palette_idx < len(self.PALETTE_KEYS) else DEFAULT_CONFIG["floor_palette"],
                 "height_multiplier": h_scale,
                 "default_height": default_height,
                 "render_mode": render_mode,
@@ -271,11 +307,11 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 "floor_line_width": 0.2,
             }
 
-        # Fix the one data-dependent input, so the style is identical
-        # wherever it is applied: at load time and in the exported QML.
+        # Fix the one data-dependent input (the tallest building's floors), so
+        # the style is identical wherever it is applied: at load time and in
+        # the exported QML. The template below has no features to scan.
         if not int(cfg.get("max_floors", 0) or 0):
-            floor_h = normalize_config(cfg)["floor_height_m"]
-            cfg["max_floors"] = max_floors_from_values(heights, h_field, floor_h, fallback_max=12)
+            cfg["max_floors"] = slab_count(heights, cfg, True)
 
         # Style an empty template with the output's schema: proves the
         # configuration works before the run finishes and is what the QML

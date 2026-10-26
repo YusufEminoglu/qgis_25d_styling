@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 DEFAULT_CONFIG: Dict[str, Any] = {
     "render_mode": "per_floor_bands",
     "height_field": "",
+    "height_unit": "auto",
     "height_multiplier": 1.0,
     "default_height": 9.0,
     "default_levels": 3,
@@ -25,6 +26,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "shadow_color": "#0f172a",
     "shadow_alpha": 40,
     "shadow_blur": 4.0,
+    "shadow_length": 0.6,
     "floor_bands_enabled": True,
     "floor_height_m": 3.2,
     "floor_line_color": "#cbd5e1",
@@ -43,9 +45,15 @@ HEIGHT_FIELD_CANDIDATES = (
     "floors",
     "storeys",
     "stories",
+    "yukseklik",
+    "bina_yuksekligi",
+    "kat_sayisi",
+    "kat_adedi",
     "kat",
     "h",
 )
+
+HEIGHT_UNITS = ("auto", "meters", "floors")
 
 
 def _clamp(value: Any, low: float, high: float, fallback: float) -> float:
@@ -70,6 +78,8 @@ def normalize_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     result["per_floor_bands"] = mode == "per_floor_bands"
 
     result["height_field"] = str(result.get("height_field") or "").strip()
+    unit = str(result.get("height_unit") or "auto").strip().lower()
+    result["height_unit"] = unit if unit in HEIGHT_UNITS else "auto"
     result["height_multiplier"] = _clamp(result.get("height_multiplier"), 0.05, 20.0, 1.0)
     result["default_height"] = _clamp(result.get("default_height"), 0.5, 1000.0, 9.0)
     result["default_levels"] = int(_clamp(result.get("default_levels"), 1, 100, 3))
@@ -78,6 +88,7 @@ def normalize_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     result["shading_intensity"] = _clamp(result.get("shading_intensity"), 0.0, 1.0, 0.4)
     result["shadow_alpha"] = int(_clamp(result.get("shadow_alpha"), 0, 100, 40))
     result["shadow_blur"] = _clamp(result.get("shadow_blur"), 0.0, 50.0, 4.0)
+    result["shadow_length"] = _clamp(result.get("shadow_length"), 0.05, 3.0, 0.6)
     result["outline_width"] = _clamp(result.get("outline_width"), 0.0, 5.0, 0.3)
     result["roof_outline_width"] = _clamp(result.get("roof_outline_width"), 0.0, 5.0, 0.4)
     result["floor_height_m"] = _clamp(result.get("floor_height_m"), 0.5, 20.0, 3.2)
@@ -106,7 +117,17 @@ def choose_height_field(field_names: Iterable[str]) -> str:
 
 
 def compass_direction(angle: Any) -> str:
-    """Return the nearest eight-point compass label for an azimuth."""
+    """Return the nearest eight-point compass label for an azimuth (clockwise from north)."""
     value = _clamp(angle, 0.0, 359.999, 0.0)
     labels = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
     return labels[int((value + 22.5) // 45.0) % 8]
+
+
+def extrusion_compass(angle: Any) -> str:
+    """Compass label of the direction roofs are pushed by a projection angle.
+
+    Projection angles follow QGIS's own 2.5D renderer: degrees counter-clockwise
+    from east (0 = E, 90 = N), so 45 leans roofs to the NE and 135 to the NW.
+    """
+    value = _clamp(angle, 0.0, 359.999, 0.0)
+    return compass_direction((90.0 - value) % 360.0)

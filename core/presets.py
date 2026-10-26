@@ -180,11 +180,13 @@ PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
+# Direction the roofs are pushed, in QGIS's 2.5D convention: degrees
+# anticlockwise from east, so 135 leans buildings to the north-west.
 STANDARD_ANGLES = [
-    ("Isometric (45 deg NE)", 45.0),
-    ("Military (30 deg)", 30.0),
-    ("Cavalier (60 deg)", 60.0),
-    ("Plan Oblique (135 deg SE)", 135.0),
-    ("Western Oblique (225 deg SW)", 225.0),
-    ("Northern Oblique (315 deg NW)", 315.0),
+    ("NE isometric (45 deg)", 45.0),
+    ("ENE (30 deg)", 30.0),
+    ("NNE (60 deg)", 60.0),
+    ("NW (135 deg)", 135.0),
+    ("SW (225 deg)", 225.0),
+    ("SE (315 deg)", 315.0),
 ]
