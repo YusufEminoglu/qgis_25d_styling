@@ -32,4 +32,4 @@ Special thanks and appreciation to the open-source cartography community and geo
 
 - **Author**: Geophilo
 - **License**: GNU General Public License v2.0 or later (GPL-2.0-or-later)
-- **Online Documentation**: [https://yusufeminoglu.github.io/qgis_25d_styling/](https://yusufeminoglu.github.io/qgis_25d_styling/)
+- **Online Documentation**: [https://geophilo.com/qgis_25d_styling/](https://geophilo.com/qgis_25d_styling/)

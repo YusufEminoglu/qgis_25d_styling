@@ -4,10 +4,12 @@ version=1.1.0
 hasProcessingProvider=yes
 
 category=Vector
-tags=2.5d,buildings,osm,overpass,building levels,extrusion,shading,floor bands,qml,symbology,isometric
+tags=2.5d,buildings,osm,overpass,building levels,extrusion,shading,floor bands,qml,symbology,isometric,cartography,geophilo
 
-description=Focused 2.5D building styler with OSM footprints, per-floor colors, 10 themes, three renderers, presets, and QML workflows.
-about=QGIS 2.5D Styling performs one focused task: producing publication-ready 2.5D building symbology. Use an existing polygon layer or explicitly download bounded OSM building footprints. OSM building:levels values drive floor counts, and multipolygon building relations are assembled with their holes; missing values use a visible, configurable three-floor default. The compact right dock provides three renderers (facades shaded by their orientation to the sun, ground shadows drawn beneath every building, floor lines on visible facades), projection and material controls, 10 curated 02CartoLab-derived themes, 23 per-floor palettes (each theme's own matching gradient plus 13 standalone palettes), live preview, previous-style restoration, and QML import/export. A single Processing algorithm applies styling headlessly. No pip dependencies are required. Repository: https://github.com/YusufEminoglu/qgis_25d_styling
+description=2.5D building maps in a few clicks: sun-shaded facades, ground shadows and floor lines, 10 themes and 23 per-floor palettes, for your own polygons or OpenStreetMap footprints.
+about=QGIS 2.5D Styling does one job: publication-ready 2.5D building maps. Use your own building polygons or download OpenStreetMap footprints for a bounded area; floor counts come from building:levels, multipolygon buildings keep their courtyards, and missing values fall back to a visible, adjustable default.
+    Three renderers work together: facades shaded by their orientation to the sun, shadows cast on the ground and floor lines on visible facades. Choose from 10 themes and 23 per-floor palettes, adjust projection and materials with a live preview, restore the previous style at any time, and import or export QML. A Processing tool applies the same styling in models and batches.
+    Manual: https://geophilo.com/qgis_25d_styling/
 
 homepage=https://geophilo.com/qgis_25d_styling/
 repository=https://gitlab.com/geophilo1/qgis_25d_styling
