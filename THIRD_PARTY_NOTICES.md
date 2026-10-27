@@ -30,6 +30,6 @@ Special thanks and appreciation to the open-source cartography community and geo
 
 ## 4. Plugin Authorship & License
 
-- **Author**: Yusuf Eminoğlu (Dokuz Eylül University)
+- **Author**: Geophilo
 - **License**: GNU General Public License v2.0 or later (GPL-2.0-or-later)
 - **Online Documentation**: [https://yusufeminoglu.github.io/qgis_25d_styling/](https://yusufeminoglu.github.io/qgis_25d_styling/)

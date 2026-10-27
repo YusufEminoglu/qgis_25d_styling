@@ -210,7 +210,7 @@ Further thanks to **Klas Karlsson** and the wider QGIS cartography community for
 
 ## Data, Credits, and License
 
-QGIS 2.5D Styling is developed by **Yusuf Emino&#287;lu** at Dokuz Eyl&uuml;l University, Department of City and Regional Planning.
+QGIS 2.5D Styling is developed by **Geophilo**.
 
 Map data is provided by OpenStreetMap contributors under the ODbL. Keep the OSM attribution visible when sharing downloads, screenshots, or exports.
 

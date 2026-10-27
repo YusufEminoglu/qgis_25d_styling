@@ -13,7 +13,7 @@ homepage=https://geophilo.com/qgis_25d_styling/
 repository=https://gitlab.com/geophilo1/qgis_25d_styling
 tracker=https://gitlab.com/geophilo1/qgis_25d_styling/-/issues
 
-author=Yusuf Eminoglu
+author=Geophilo
 email=yusuf.eminoglu@deu.edu.tr
 
 icon=icons/icon.png
