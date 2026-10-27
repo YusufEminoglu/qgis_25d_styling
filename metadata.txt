@@ -24,6 +24,7 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 
 changelog=
+    1.1.1 - Hub listing text rewritten; author Geophilo; university affiliation removed; documentation links use the standard geophilo.com pages (manual.html, guide/); manual HTML no longer ships in the plugin package.
     1.1.0 - Rebuilt the 2.5D renderers. Shadows are drawn in their own first pass, so they no longer darken neighbouring roofs, and buildings are drawn back to front. Every facade is shaded by its own orientation to the sun (it was one colour for all walls). Floor lines and corner edges are drawn only on visible facades. Native and geographic layers extrude in the right units instead of degrees. OSM multipolygon building relations are assembled with their holes. New height-unit choice (auto, metres, floors), Turkish field names, shadow length, per-floor legend, and corrected quick-angle labels.
     1.0.2 - Fixed the Processing algorithm never styling its output or writing its QML; the 2.5D style now reaches the loaded layer for temporary and file outputs. Repository links point at the geophilo1 GitLab namespace.
     1.0.0 - Compact right-dock 2.5D studio with bounded OSM buildings, building:levels support, configurable three-floor fallback, soft teal/yavru agzi default building colors and matching default floor gradient, 10 themes each with its own matching per-floor gradient, safe restore, and QML workflows.
