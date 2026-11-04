@@ -267,7 +267,7 @@ def _corner_ticks(color: "QColor", width: float, angle_deg: float, length_expr: 
     if placement is not None and hasattr(ticks, "setPlacements"):
         ticks.setPlacements(placement)
     else:
-        ticks.setPlacement(QgsTemplatedLineSymbolLayerBase.Vertex)
+        ticks.setPlacement(QgsTemplatedLineSymbolLayerBase.Placement.Vertex)
     # Hash angles run clockwise from north; projection angles anticlockwise from east.
     hash_angle = (90.0 - angle_deg) % 360.0
     ticks.setHashAngle(hash_angle)

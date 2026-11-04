@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2] - 2026-11-04
+
+- Qt6 / QGIS 4 compatibility: Qt and QGIS enum values are written in their scoped form (for example `QgsWkbTypes.GeometryType.PointGeometry`), which QGIS 3.28+ and QGIS 4 both accept; no behaviour change.
+
 ## [1.1.1] - 2026-10-27
 
 - Hub listing text rewritten; author Geophilo; university affiliation removed; documentation links use the standard geophilo.com pages (manual.html, guide/); manual HTML no longer ships in the plugin package.

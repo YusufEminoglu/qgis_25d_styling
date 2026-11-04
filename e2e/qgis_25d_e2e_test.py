@@ -30,7 +30,7 @@ from qgis.PyQt.QtWidgets import QMessageBox
 
 qgs = QgsApplication([], False)
 qgs.initQgis()
-QMessageBox.critical = staticmethod(lambda *_args, **_kwargs: QMessageBox.Ok)
+QMessageBox.critical = staticmethod(lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok)
 passed_count = 0
 
 

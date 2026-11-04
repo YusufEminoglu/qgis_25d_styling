@@ -88,7 +88,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
-                self.INPUT, "Input Polygon Layer", [QgsProcessing.TypeVectorPolygon]
+                self.INPUT, "Input Polygon Layer", [QgsProcessing.SourceType.TypeVectorPolygon]
             )
         )
         self.addParameter(
@@ -112,7 +112,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
                 self.HEIGHT_FIELD,
                 "Height Attribute Field",
                 parentLayerParameterName=self.INPUT,
-                type=QgsProcessingParameterField.Numeric,
+                type=QgsProcessingParameterField.DataType.Numeric,
                 optional=True,
             )
         )
@@ -128,7 +128,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.HEIGHT_SCALE,
                 "Height Scale Multiplier",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=1.0,
                 minValue=0.1,
                 maxValue=10.0,
@@ -138,7 +138,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.DEFAULT_HEIGHT,
                 "Fallback Height (meters)",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=9.0,
                 minValue=0.5,
                 maxValue=1000.0,
@@ -148,7 +148,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.PROJECTION_ANGLE,
                 "Projection Angle (degrees, 0-360)",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=45.0,
                 minValue=0.0,
                 maxValue=360.0,
@@ -158,7 +158,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.SUN_AZIMUTH,
                 "Solar Azimuth (degrees, 0-360)",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=315.0,
                 minValue=0.0,
                 maxValue=360.0,
@@ -168,7 +168,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.SHADING_INTENSITY,
                 "Solar Shading Depth (0.0 to 1.0)",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=0.4,
                 minValue=0.0,
                 maxValue=1.0,
@@ -198,7 +198,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.FLOOR_HEIGHT,
                 "Story / Floor Height (meters)",
-                type=QgsProcessingParameterNumber.Double,
+                type=QgsProcessingParameterNumber.Type.Double,
                 defaultValue=3.2,
                 minValue=1.0,
                 maxValue=20.0,
@@ -222,7 +222,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
         )
         self.addParameter(
             QgsProcessingParameterVectorDestination(
-                self.OUTPUT, "Styled Output Layer", QgsProcessing.TypeVectorPolygon
+                self.OUTPUT, "Styled Output Layer", QgsProcessing.SourceType.TypeVectorPolygon
             )
         )
 
@@ -265,7 +265,7 @@ class Apply25DStyleAlgorithm(QgsProcessingAlgorithm):
         for i, feat in enumerate(source.getFeatures()):
             if feedback.isCanceled():
                 break
-            sink.addFeature(feat, QgsFeatureSink.FastInsert)
+            sink.addFeature(feat, QgsFeatureSink.Flag.FastInsert)
             if h_idx >= 0:
                 heights.append(feat.attribute(h_idx))
             if total > 0:
